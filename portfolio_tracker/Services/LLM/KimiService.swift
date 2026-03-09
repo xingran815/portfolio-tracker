@@ -184,6 +184,11 @@ actor KimiService: LLMServiceProtocol {
         }
     }
     
+    func clearHistory() {
+        // KimiService is stateless - history is passed in with each request
+        // This method is provided for protocol conformance
+    }
+    
     // MARK: - Private Methods
     
     /// Performs a request with retry logic for transient failures

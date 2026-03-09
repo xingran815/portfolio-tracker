@@ -46,7 +46,7 @@ struct ChatView: View {
         .alert("清除对话", isPresented: $showingClearConfirmation) {
             Button("取消", role: .cancel) {}
             Button("清除", role: .destructive) {
-                viewModel.clearHistory()
+                viewModel.clearConversation()
             }
         } message: {
             Text("确定要清除所有对话历史吗？")
@@ -54,8 +54,10 @@ struct ChatView: View {
         .sheet(isPresented: $showingContextInfo) {
             contextInfoSheet
         }
-        .alert("错误", isPresented: $viewModel.showError) {
-            Button("确定", role: .cancel) {}
+        .alert("错误", isPresented: .constant(viewModel.errorMessage != nil)) {
+            Button("确定", role: .cancel) {
+                viewModel.errorMessage = nil
+            }
         } message: {
             Text(viewModel.errorMessage ?? "发生错误")
         }
@@ -118,13 +120,12 @@ struct ChatView: View {
                         }
                 }
                 
-                // Streaming message
-                if viewModel.isGenerating && !viewModel.streamingResponse.isEmpty {
+                // Current streaming message (last assistant message while loading)
+                if viewModel.isLoading,
+                   let lastMessage = viewModel.messages.last,
+                   lastMessage.role == .assistant {
                     ChatMessageView(
-                        message: ChatMessage(
-                            role: .assistant,
-                            content: viewModel.streamingResponse
-                        ),
+                        message: lastMessage,
                         isStreaming: true
                     )
                     .id("streaming")
@@ -134,8 +135,10 @@ struct ChatView: View {
             .onChange(of: viewModel.messages.count) { _, _ in
                 scrollToBottom(proxy: proxy)
             }
-            .onChange(of: viewModel.streamingResponse) { _, _ in
-                scrollToBottom(proxy: proxy)
+            .onChange(of: viewModel.messages.last?.content) { _, _ in
+                if viewModel.isLoading {
+                    scrollToBottom(proxy: proxy)
+                }
             }
         }
     }
@@ -157,18 +160,18 @@ struct ChatView: View {
                         .font(.title2)
                         .foregroundStyle(viewModel.inputText.isEmpty ? .secondary : Color.accentColor)
                 }
-                .disabled(viewModel.inputText.isEmpty || viewModel.isGenerating)
+                .disabled(viewModel.inputText.isEmpty || viewModel.isLoading)
                 .keyboardShortcut(.return, modifiers: [.command])
             }
             
             HStack {
-                Text(viewModel.isGenerating ? "AI 正在思考..." : "按 ⌘+Enter 发送")
+                Text(viewModel.isLoading ? "AI 正在思考..." : "按 ⌘+Enter 发送")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
                 Spacer()
                 
-                if viewModel.isGenerating {
+                if viewModel.isLoading {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -250,7 +253,7 @@ struct ChatView: View {
     
     private func scrollToBottom(proxy: ScrollViewProxy) {
         withAnimation {
-            if viewModel.isGenerating {
+            if viewModel.isLoading {
                 proxy.scrollTo("streaming", anchor: .bottom)
             } else if let lastId = viewModel.messages.last?.id {
                 proxy.scrollTo(lastId, anchor: .bottom)

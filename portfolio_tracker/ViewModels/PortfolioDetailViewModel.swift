@@ -159,7 +159,7 @@ final class PortfolioDetailViewModel {
                 market: position.market
             )
             
-            position.updatePrice(quote.price, at: quote.timestamp)
+            position.updatePrice(quote.price, at: quote.lastUpdated)
             try viewContext.save()
             loadPositions()
             
