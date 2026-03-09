@@ -25,10 +25,9 @@ jobs:
       run: xcodebuild -version
       
     - name: Build Project
-      working-directory: ./portfolio_tracker
       run: |
         xcodebuild clean build \
-          -project portfolio_tracker.xcodeproj \
+          -project portfolio_tracker/portfolio_tracker.xcodeproj \
           -scheme portfolio_tracker \
           -destination 'platform=macOS' \
           CODE_SIGN_IDENTITY="" \
@@ -36,10 +35,9 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           
     - name: Run Tests
-      working-directory: ./portfolio_tracker
       run: |
         xcodebuild test \
-          -project portfolio_tracker.xcodeproj \
+          -project portfolio_tracker/portfolio_tracker.xcodeproj \
           -scheme portfolio_tracker \
           -destination 'platform=macOS' \
           CODE_SIGN_IDENTITY="" \
@@ -54,7 +52,7 @@ jobs:
       if: always()
       with:
         name: test-results
-        path: portfolio_tracker/xcodebuild.log
+        path: xcodebuild.log
         
   lint:
     name: SwiftLint
