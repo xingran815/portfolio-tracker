@@ -7,13 +7,6 @@
 
 import Foundation
 
-/// Market identifiers for different exchanges
-enum Market: String, CaseIterable, Sendable, Codable {
-    case us = "US"
-    case hk = "HK"
-    case cn = "CN"
-}
-
 /// Quote data structure
 struct Quote: Sendable, Codable {
     let symbol: String
