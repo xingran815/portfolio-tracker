@@ -102,6 +102,7 @@ Keys.swift
 !CONTRIBUTING.md
 !CHANGELOG.md
 !LICENSE*
+!Examples/*.md
 
 # Temporary files
 *.tmp
