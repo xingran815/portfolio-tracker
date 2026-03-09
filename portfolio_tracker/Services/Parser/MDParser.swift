@@ -7,6 +7,85 @@
 
 import Foundation
 
+// MARK: - Field Mapping Constants
+
+/// Centralized field name mappings for bilingual support
+private enum FieldMapping {
+    /// Risk profile field names (English and Chinese)
+    static let riskProfile = ["风险偏好", "riskprofile", "risk"]
+    
+    /// Expected return field names
+    static let expectedReturn = ["预期收益", "expectedreturn", "return", "目标收益"]
+    
+    /// Max drawdown field names
+    static let maxDrawdown = ["最大回撤", "maxdrawdown", "drawdown"]
+    
+    /// Rebalancing frequency field names
+    static let rebalancingFrequency = ["调仓频率", "rebalancingfrequency", "frequency", "再平衡频率"]
+    
+    /// Column header keywords for table parsing
+    static let symbolColumn = ["代码", "symbol", "股票"]
+    static let nameColumn = ["名称", "name", "股票名称"]
+    static let typeColumn = ["类型", "type", "assettype"]
+    static let marketColumn = ["市场", "market", "交易所"]
+    static let sharesColumn = ["数量", "shares", "股数", "持仓"]
+    static let costColumn = ["成本", "cost", "costbasis", "买入价"]
+    static let ratioColumn = ["比例", "ratio", "percentage", "占比"]
+}
+
+// MARK: - Chinese Stock Code Patterns
+
+/// Chinese A-share stock code patterns
+/// - 6-digit numeric codes starting with:
+///   - 0: Shenzhen small/medium boards (002xxx, 003xxx)
+///   - 3: Shenzhen ChiNext/GEM (300xxx, 301xxx)
+///   - 6: Shanghai main board (600xxx, 601xxx, 603xxx, 605xxx)
+///   - 68: Shanghai STAR market (688xxx)
+/// Reference: https://www.szse.cn/English/
+///            http://english.sse.com.cn/
+private enum ChineseStockPatterns {
+    /// Pattern for mainland China A-shares (6 digits)
+    static let mainlandCodeLength = 6
+    
+    /// Valid first digits for mainland exchanges
+    static let mainlandFirstDigits: Set<Character> = ["0", "3", "6"]
+    
+    /// Minimum digits for numeric-only symbols to be considered potential stock codes
+    static let minNumericCodeLength = 4
+}
+
+// MARK: - Symbol Validation
+
+/// Validates and sanitizes stock symbols
+private enum SymbolValidator {
+    /// Maximum length for a stock symbol
+    static let maxSymbolLength = 20
+    
+    /// Allowed characters in stock symbols (alphanumeric, dots, hyphens)
+    static let allowedCharacters = CharacterSet.alphanumerics
+        .union(CharacterSet(charactersIn: ".-"))
+    
+    /// Validates a symbol and returns sanitized version or nil if invalid
+    static func validate(_ symbol: String) -> String? {
+        let trimmed = symbol.trimmingCharacters(in: .whitespaces)
+        
+        // Check length
+        guard !trimmed.isEmpty, trimmed.count <= maxSymbolLength else {
+            return nil
+        }
+        
+        // Check allowed characters
+        let symbolSet = CharacterSet(charactersIn: trimmed)
+        guard allowedCharacters.isSuperset(of: symbolSet) else {
+            return nil
+        }
+        
+        return trimmed.uppercased()
+    }
+}
+
+// MARK: - Parser Implementation
+
 /// Parser for Markdown portfolio configuration files
 struct MDParser: MDParserProtocol {
     
@@ -105,20 +184,24 @@ private extension MDParser {
             let line = lines[index].trimmingCharacters(in: .whitespaces)
             
             // Stop at next section header or table
-            if line.hasPrefix("##") || line.hasPrefix("|") || line.hasPrefix("-") {
+            if line.hasPrefix("##") || line.hasPrefix("|") || line.hasPrefix("- ") {
                 break
             }
             
-            // Parse key-value pair
+            // Parse key-value pair using safe string splitting
             if line.hasPrefix("- ") {
                 let content = String(line.dropFirst(2))
-                if let separatorIndex = content.firstIndex(of: ":") {
-                    let key = String(content[..<separatorIndex]).trimmingCharacters(in: .whitespaces)
-                    let value = String(content[content.index(after: separatorIndex)...])
-                        .trimmingCharacters(in: .whitespaces)
-                    
-                    try parseMetadataKey(key: key, value: value, metadata: &metadata)
+                let parts = content.split(separator: ":", maxSplits: 1)
+                
+                guard parts.count == 2 else {
+                    index += 1
+                    continue
                 }
+                
+                let key = String(parts[0]).trimmingCharacters(in: .whitespaces)
+                let value = String(parts[1]).trimmingCharacters(in: .whitespaces)
+                
+                try parseMetadataKey(key: key, value: value, metadata: &metadata)
             }
             
             index += 1
@@ -132,19 +215,19 @@ private extension MDParser {
         let normalizedKey = key.lowercased().replacingOccurrences(of: " ", with: "")
         
         switch normalizedKey {
-        case "风险偏好", "riskprofile", "risk":
+        case let key where FieldMapping.riskProfile.contains(key):
             guard let profile = RiskProfile(rawValue: value.lowercased()) else {
                 throw MDParserError.invalidRiskProfile(value)
             }
             metadata.riskProfile = profile
             
-        case "预期收益", "expectedreturn", "return", "目标收益":
+        case let key where FieldMapping.expectedReturn.contains(key):
             metadata.expectedReturn = try parsePercentageOrDecimal(value, field: "expectedReturn")
             
-        case "最大回撤", "maxdrawdown", "drawdown":
+        case let key where FieldMapping.maxDrawdown.contains(key):
             metadata.maxDrawdown = try parsePercentageOrDecimal(value, field: "maxDrawdown")
             
-        case "调仓频率", "rebalancingfrequency", "frequency", "再平衡频率":
+        case let key where FieldMapping.rebalancingFrequency.contains(key):
             let normalizedValue = value.lowercased()
             if normalizedValue == "monthly" || normalizedValue == "每月" {
                 metadata.rebalancingFrequency = .monthly
@@ -188,13 +271,8 @@ private extension MDParser {
         
         let (headers, headerIndex) = try parseTableHeaders(lines: lines, index: &index)
         
-        guard let symbolCol = headers.firstIndex(where: { 
-            $0.lowercased() == "代码" || $0.lowercased() == "symbol" || $0.lowercased() == "股票"
-        }),
-              let ratioCol = headers.firstIndex(where: {
-                  $0.lowercased() == "比例" || $0.lowercased() == "ratio" || 
-                  $0.lowercased() == "percentage" || $0.lowercased() == "占比"
-              }) else {
+        guard let symbolCol = findColumnIndex(headers: headers, keywords: FieldMapping.symbolColumn),
+              let ratioCol = findColumnIndex(headers: headers, keywords: FieldMapping.ratioColumn) else {
             // Not a target allocation table, skip
             index = headerIndex
             return nil
@@ -219,8 +297,22 @@ private extension MDParser {
                 continue
             }
             
-            if let ratio = try? parsePercentageOrDecimal(ratioString, field: "targetAllocation") {
-                allocation[symbol] = ratio
+            // Validate symbol before processing
+            guard let validatedSymbol = SymbolValidator.validate(symbol) else {
+                if !configuration.allowPartialParsing {
+                    throw MDParserError.invalidPositionFormat(line: "Invalid symbol: \(symbol)")
+                }
+                index += 1
+                continue
+            }
+            
+            do {
+                let ratio = try parsePercentageOrDecimal(ratioString, field: "targetAllocation")
+                allocation[validatedSymbol] = ratio
+            } catch {
+                if !configuration.allowPartialParsing {
+                    throw error
+                }
             }
             
             index += 1
@@ -344,13 +436,13 @@ private extension MDParser {
         
         let (headers, _) = try parseTableHeaders(lines: lines, index: &index)
         
-        // Map column indices
-        let symbolCol = findColumnIndex(headers: headers, keywords: ["代码", "symbol", "股票", "代码"])
-        let nameCol = findColumnIndex(headers: headers, keywords: ["名称", "name", "股票名称"])
-        let typeCol = findColumnIndex(headers: headers, keywords: ["类型", "type", "assettype"])
-        let marketCol = findColumnIndex(headers: headers, keywords: ["市场", "market", "交易所"])
-        let sharesCol = findColumnIndex(headers: headers, keywords: ["数量", "shares", "股数", "持仓"])
-        let costCol = findColumnIndex(headers: headers, keywords: ["成本", "cost", "costbasis", "买入价"])
+        // Map column indices using centralized mappings
+        let symbolCol = findColumnIndex(headers: headers, keywords: FieldMapping.symbolColumn)
+        let nameCol = findColumnIndex(headers: headers, keywords: FieldMapping.nameColumn)
+        let typeCol = findColumnIndex(headers: headers, keywords: FieldMapping.typeColumn)
+        let marketCol = findColumnIndex(headers: headers, keywords: FieldMapping.marketColumn)
+        let sharesCol = findColumnIndex(headers: headers, keywords: FieldMapping.sharesColumn)
+        let costCol = findColumnIndex(headers: headers, keywords: FieldMapping.costColumn)
         
         guard let symbolCol = symbolCol, let sharesCol = sharesCol else {
             throw MDParserError.invalidTableFormat
@@ -370,21 +462,24 @@ private extension MDParser {
             let symbol = cells[symbolCol].trimmingCharacters(in: .whitespaces)
             let sharesString = cells[sharesCol].trimmingCharacters(in: .whitespaces)
             
-            guard !symbol.isEmpty else {
+            // Validate symbol
+            guard let validatedSymbol = SymbolValidator.validate(symbol) else {
+                if !configuration.allowPartialParsing {
+                    throw MDParserError.invalidPositionFormat(line: "Invalid symbol: \(symbol)")
+                }
                 index += 1
                 continue
             }
             
             // Check for duplicates
-            let normalizedSymbol = symbol.uppercased()
-            if seenSymbols.contains(normalizedSymbol) {
+            if seenSymbols.contains(validatedSymbol) {
                 if !configuration.allowPartialParsing {
-                    throw MDParserError.duplicateSymbol(symbol)
+                    throw MDParserError.duplicateSymbol(validatedSymbol)
                 }
                 index += 1
                 continue
             }
-            seenSymbols.insert(normalizedSymbol)
+            seenSymbols.insert(validatedSymbol)
             
             // Parse shares (required)
             guard let shares = Double(sharesString), shares > 0 else {
@@ -395,18 +490,34 @@ private extension MDParser {
                 continue
             }
             
-            // Parse optional fields
-            let name = nameCol != nil && cells.count > nameCol! ? cells[nameCol!] : nil
-            let assetType = typeCol != nil && cells.count > typeCol! ? parseAssetType(cells[typeCol!]) : nil
-            let market = marketCol != nil && cells.count > marketCol! ? parseMarket(cells[marketCol!]) : nil
-            let costBasis = costCol != nil && cells.count > costCol! ? Double(cells[costCol!]) : nil
+            // Parse optional fields using safe optional binding
+            let name: String? = {
+                guard let col = nameCol, cells.count > col else { return nil }
+                let value = cells[col]
+                return value.isEmpty ? nil : value
+            }()
+            
+            let assetType: AssetType? = {
+                guard let col = typeCol, cells.count > col else { return nil }
+                return parseAssetType(cells[col])
+            }()
+            
+            let market: Market? = {
+                guard let col = marketCol, cells.count > col else { return nil }
+                return parseMarket(cells[col])
+            }()
+            
+            let costBasis: Double? = {
+                guard let col = costCol, cells.count > col else { return nil }
+                return Double(cells[col])
+            }()
             
             // Infer market from symbol if not specified
-            let inferredMarket = market ?? inferMarket(from: symbol)
+            let inferredMarket = market ?? inferMarket(from: validatedSymbol)
             
             let position = PositionConfig(
-                symbol: normalizedSymbol,
-                name: name?.isEmpty == false ? name : nil,
+                symbol: validatedSymbol,
+                name: name,
                 assetType: assetType ?? configuration.defaultAssetType,
                 market: inferredMarket,
                 shares: shares,
@@ -451,19 +562,22 @@ private extension MDParser {
             let content = String(line.dropFirst(2))
             
             // Try to parse: SYMBOL: shares @ cost or SYMBOL: shares
-            if let position = try? parseListPosition(content) {
-                let normalizedSymbol = position.symbol.uppercased()
+            do {
+                let position = try parseListPosition(content)
+                let normalizedSymbol = position.symbol
                 
                 if seenSymbols.contains(normalizedSymbol) {
                     if !configuration.allowPartialParsing {
-                        throw MDParserError.duplicateSymbol(position.symbol)
+                        throw MDParserError.duplicateSymbol(normalizedSymbol)
                     }
                 } else {
                     seenSymbols.insert(normalizedSymbol)
                     positions.append(position)
                 }
-            } else if !configuration.allowPartialParsing {
-                throw MDParserError.invalidPositionFormat(line: line)
+            } catch {
+                if !configuration.allowPartialParsing {
+                    throw MDParserError.invalidPositionFormat(line: line)
+                }
             }
             
             index += 1
@@ -476,27 +590,34 @@ private extension MDParser {
     func parseListPosition(_ content: String) throws -> PositionConfig {
         // Format: SYMBOL: shares @ cost or SYMBOL: shares
         
-        // Split by colon to get symbol
-        guard let colonIndex = content.firstIndex(of: ":") else {
+        // Split by colon to get symbol using safe string splitting
+        let parts = content.split(separator: ":", maxSplits: 1)
+        guard parts.count == 2 else {
             throw MDParserError.invalidPositionFormat(line: content)
         }
         
-        let symbol = String(content[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-        let rest = String(content[content.index(after: colonIndex)...])
-            .trimmingCharacters(in: .whitespaces)
+        let symbolPart = String(parts[0]).trimmingCharacters(in: .whitespaces)
+        let rest = String(parts[1]).trimmingCharacters(in: .whitespaces)
+        
+        // Validate symbol
+        guard let symbol = SymbolValidator.validate(symbolPart) else {
+            throw MDParserError.invalidPositionFormat(line: "Invalid symbol: \(symbolPart)")
+        }
         
         // Parse shares and cost
         var shares: Double = 0
         var costBasis: Double?
         
         // Check for "@" separator (cost)
-        if let atIndex = rest.firstIndex(of: "@") {
-            let sharesPart = String(rest[..<atIndex]).trimmingCharacters(in: .whitespaces)
-            let costPart = String(rest[rest.index(after: atIndex)...])
-                .trimmingCharacters(in: .whitespaces)
+        let restParts = rest.split(separator: "@", maxSplits: 1)
+        let sharesPart = String(restParts[0]).trimmingCharacters(in: .whitespaces)
+        
+        if restParts.count == 2 {
+            let costPart = String(restParts[1]).trimmingCharacters(in: .whitespaces)
             
             // Remove "shares" or "股" text
-            let sharesClean = sharesPart.replacingOccurrences(of: "shares", with: "")
+            let sharesClean = sharesPart
+                .replacingOccurrences(of: "shares", with: "", options: .caseInsensitive)
                 .replacingOccurrences(of: "股", with: "")
                 .trimmingCharacters(in: .whitespaces)
             
@@ -506,7 +627,8 @@ private extension MDParser {
             shares = s
             
             // Remove currency symbols
-            let costClean = costPart.replacingOccurrences(of: "$", with: "")
+            let costClean = costPart
+                .replacingOccurrences(of: "$", with: "")
                 .replacingOccurrences(of: "¥", with: "")
                 .replacingOccurrences(of: "HK$", with: "")
                 .trimmingCharacters(in: .whitespaces)
@@ -514,7 +636,8 @@ private extension MDParser {
             costBasis = Double(costClean)
         } else {
             // Just shares number
-            let sharesClean = rest.replacingOccurrences(of: "shares", with: "")
+            let sharesClean = sharesPart
+                .replacingOccurrences(of: "shares", with: "", options: .caseInsensitive)
                 .replacingOccurrences(of: "股", with: "")
                 .trimmingCharacters(in: .whitespaces)
             
@@ -528,7 +651,7 @@ private extension MDParser {
         let market = inferMarket(from: symbol)
         
         return PositionConfig(
-            symbol: symbol.uppercased(),
+            symbol: symbol,
             name: nil,
             assetType: configuration.defaultAssetType,
             market: market,
@@ -543,6 +666,12 @@ private extension MDParser {
 private extension MDParser {
     
     /// Parses a percentage string (8% or 0.08) into decimal
+    /// - Parameters:
+    ///   - value: The string value to parse (e.g., "8%", "0.08")
+    ///   - field: Field name for error reporting
+    /// - Returns: Decimal value (e.g., 0.08 for 8%)
+    /// - Throws: MDParserError if value cannot be parsed
+    /// - Note: Values > 1 without % suffix are rejected to avoid ambiguity
     func parsePercentageOrDecimal(_ value: String, field: String) throws -> Double {
         let cleanValue = value.trimmingCharacters(in: .whitespaces)
         
@@ -560,9 +689,13 @@ private extension MDParser {
             throw MDParserError.invalidNumericValue(field: field, value: value)
         }
         
-        // If value > 1, assume it's a percentage (e.g., 8 means 8%)
-        if decimal > 1.0 {
-            return decimal / 100.0
+        // Reject values > 1 without % suffix to avoid ambiguity
+        // Users must explicitly use % for percentages > 100%
+        guard decimal <= 1.0 else {
+            throw MDParserError.invalidPercentageValue(
+                field: field,
+                value: value
+            )
         }
         
         return decimal
@@ -575,13 +708,13 @@ private extension MDParser {
         switch normalized {
         case "stock", "股票", "个股":
             return .stock
-        case "fund", "基金", " mutual fund":
+        case "fund", "基金":
             return .fund
         case "etf", "etfs":
             return .etf
         case "bond", "债券":
             return .bond
-        case "cash", "现金", "cash equivalent":
+        case "cash", "现金":
             return .cash
         default:
             return nil
@@ -604,32 +737,36 @@ private extension MDParser {
         }
     }
     
-    /// Infers market from symbol suffix
+    /// Infers market from symbol suffix or pattern
+    /// - Parameter symbol: Stock symbol to analyze
+    /// - Returns: Inferred market or default from configuration
+    /// - Note: Only uses explicit patterns to avoid misclassification
     func inferMarket(from symbol: String) -> Market? {
         let upperSymbol = symbol.uppercased()
         
+        // Explicit suffixes take precedence
         if upperSymbol.hasSuffix(".HK") {
             return .hk
-        } else if upperSymbol.hasSuffix(".SS") || upperSymbol.hasSuffix(".SZ") {
+        } else if upperSymbol.hasSuffix(".SS") || upperSymbol.hasSuffix(".SH") || 
+                    upperSymbol.hasSuffix(".SZ") {
             return .cn
         } else if upperSymbol.hasSuffix(".US") {
             return .us
         }
         
-        // Chinese stock codes (6 digits starting with 0, 3, 6)
+        // Check for Chinese mainland stock codes (6 digits)
+        // Pattern: Exactly 6 digits starting with 0, 3, or 6
         let digitsOnly = upperSymbol.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
-        if digitsOnly.count == 6 {
-            let firstDigit = digitsOnly.prefix(1)
-            if firstDigit == "0" || firstDigit == "3" || firstDigit == "6" {
+        
+        if digitsOnly.count == ChineseStockPatterns.mainlandCodeLength,
+           let firstChar = digitsOnly.first {
+            if ChineseStockPatterns.mainlandFirstDigits.contains(firstChar) {
                 return .cn
             }
         }
         
-        // Hong Kong stock codes (4-5 digits)
-        if digitsOnly.count >= 4 && digitsOnly.count <= 5 {
-            return .hk
-        }
-        
+        // For all other cases, use default market
+        // Removed the 4-5 digit HK inference which was too aggressive
         return configuration.defaultMarket
     }
 }
