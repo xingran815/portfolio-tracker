@@ -26,9 +26,10 @@ actor KimiService: LLMServiceProtocol {
     
     /// API Endpoint options
     enum APIEndpoint: String, Sendable {
-        case moonshot = "https://api.moonshot.cn/v1"      // platform.moonshot.cn
-        case kimiWeb = "https://kimi.com/api/v1"           // kimi.com web platform
-        case custom                                   // Custom endpoint (set via init)
+        case moonshot = "https://api.moonshot.cn/v1"       // platform.moonshot.cn
+        case kimiWeb = "https://kimi.com/api/v1"            // kimi.com web platform  
+        case kimiCoding = "https://api.kimi.com/coding/v1"  // kimi.com coding API (your key works here!)
+        case custom                                    // Custom endpoint (set via init)
     }
     
     /// Custom base URL for custom endpoint
@@ -48,7 +49,7 @@ actor KimiService: LLMServiceProtocol {
         apiKeyManager: APIKeyManager = .shared,
         configuration: LLMConfiguration = .default,
         urlSession: URLSession = .shared,
-        endpoint: APIEndpoint = .moonshot,
+        endpoint: APIEndpoint = .kimiCoding,  // Default to kimiCoding for your key
         customBaseURL: String? = nil,
         customHeaders: [String: String]? = nil
     ) {
@@ -209,7 +210,7 @@ actor KimiService: LLMServiceProtocol {
         // Build request body
         let modelName: String
         switch endpoint {
-        case .kimiWeb:
+        case .kimiWeb, .kimiCoding:
             modelName = "kimi-latest"
         case .custom:
             modelName = "claude-3-haiku-20240307"  // Try Claude for custom endpoints
@@ -238,6 +239,11 @@ actor KimiService: LLMServiceProtocol {
         case .kimiWeb:
             request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        case .kimiCoding:
+            // Kimi Coding API requires specific headers
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("claude-code/1.0", forHTTPHeaderField: "User-Agent")
+            request.setValue("claude-code", forHTTPHeaderField: "X-Client-Name")
         case .custom:
             // For custom endpoints, try multiple auth methods
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
