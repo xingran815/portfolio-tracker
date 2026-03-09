@@ -43,9 +43,11 @@ public enum AssetType: String, CaseIterable, Codable, Sendable {
 
 /// Market identifier
 public enum Market: String, CaseIterable, Codable, Sendable {
+    // swiftlint:disable identifier_name
     case us = "US"
     case hk = "HK"
     case cn = "CN"
+    // swiftlint:enable identifier_name
     
     public var displayName: String {
         switch self {

@@ -79,10 +79,13 @@ Keys.swift
 *.p12
 *.mobileprovision
 
-# Environment files
+# Environment files - NEVER COMMIT
 .env
 .env.local
 .env.*.local
+*.env
+secrets*
+!Secrets.example.swift
 
 # CoreData store (user data)
 *.sqlite
@@ -101,6 +104,7 @@ Keys.swift
 !README.md
 !CONTRIBUTING.md
 !CHANGELOG.md
+!KIMI_API_REFERENCE.md
 !LICENSE*
 !Examples/*.md
 
