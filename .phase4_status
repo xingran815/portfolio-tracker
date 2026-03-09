@@ -1,0 +1,83 @@
+# Phase 4: MD Parser
+
+This branch implements Phase 4 - Markdown portfolio import parser.
+
+See issue #3 for details.
+
+## Status: ✅ COMPLETE
+
+## Deliverables
+
+- [x] MDParserProtocol.swift - Protocol definition with configuration options
+- [x] MDParser.swift - Full implementation with table and list format support
+- [x] MDParserError.swift - Comprehensive error types with LocalizedError
+- [x] PortfolioConfig.swift - Sendable data structures for parsed configuration
+- [x] test-md-parser.swift - Test script with 8 test cases
+- [x] example-portfolio.md - Full format example
+- [x] example-portfolio-simple.md - List format example
+
+## Features
+
+- Parse portfolio name from h1 header
+- Parse metadata (risk profile, expected return, max drawdown, frequency)
+- Parse target allocation tables
+- Parse positions from table or list format
+- Market inference from symbol suffixes
+- Support for US, HK, and CN markets
+- Bilingual support (Chinese and English)
+
+## Supported Markdown Formats
+
+### Full Table Format
+```markdown
+# Portfolio Name
+- 风险偏好: moderate
+- 预期收益: 8%
+- 最大回撤: 15%
+- 调仓频率: quarterly
+
+## 目标配置
+| 代码 | 比例 |
+| AAPL | 40% |
+| MSFT | 35% |
+
+## 持仓
+| 代码 | 名称 | 类型 | 市场 | 数量 | 成本 |
+| AAPL | Apple | stock | US | 100 | 150.0 |
+| 0700.HK | Tencent | stock | HK | 200 | 380.5 |
+```
+
+### Simple List Format
+```markdown
+# Simple Portfolio
+- riskProfile: conservative
+
+## Positions
+- AAPL: 100 shares @ $150.0
+- MSFT: 50 shares @ $300.0
+```
+
+## Usage
+
+```swift
+let parser = MDParser()
+let config = try parser.parse(markdownContent)
+
+// Create CoreData entities from config
+let portfolio = Portfolio(context: context)
+portfolio.name = config.name
+portfolio.riskProfile = config.riskProfile ?? .moderate
+// ...
+```
+
+## Testing
+
+```bash
+swift Scripts/test-md-parser.swift
+```
+
+## Build
+
+```bash
+xcodebuild -project portfolio_tracker.xcodeproj -scheme portfolio_tracker build
+```

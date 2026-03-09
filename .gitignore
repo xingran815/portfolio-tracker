@@ -106,6 +106,7 @@ secrets*
 !CHANGELOG.md
 !KIMI_API_REFERENCE.md
 !LICENSE*
+!Examples/*.md
 
 # Temporary files
 *.tmp
