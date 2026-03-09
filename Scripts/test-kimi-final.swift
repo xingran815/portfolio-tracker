@@ -50,7 +50,7 @@ request.httpMethod = "POST"
 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 request.setValue("application/json", forHTTPHeaderField: "Accept")
 request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-request.setValue("claude-code/1.0", forHTTPHeaderField: "User-Agent")
+request.setValue("claude-code/2.0", forHTTPHeaderField: "User-Agent")
 request.setValue("claude-code", forHTTPHeaderField: "X-Client-Name")
 
 request.httpBody = try! JSONSerialization.data(withJSONObject: requestBody)

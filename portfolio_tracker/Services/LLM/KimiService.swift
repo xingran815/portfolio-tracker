@@ -242,7 +242,7 @@ actor KimiService: LLMServiceProtocol {
         case .kimiCoding:
             // Kimi Coding API requires specific headers
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            request.setValue("claude-code/1.0", forHTTPHeaderField: "User-Agent")
+            request.setValue("claude-code/2.0", forHTTPHeaderField: "User-Agent")
             request.setValue("claude-code", forHTTPHeaderField: "X-Client-Name")
         case .custom:
             // For custom endpoints, try multiple auth methods
