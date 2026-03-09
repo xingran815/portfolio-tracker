@@ -12,14 +12,15 @@ import os.log
 // MARK: - Financial Constants
 
 /// Constants for financial calculations
+/// All values use Double for consistency and performance
 enum FinancialConstants {
     /// Minimum position value to consider (avoids micro-positions)
-    static let minPositionValue: Decimal = Decimal(string: "0.01")!
+    static let minPositionValue: Double = 0.01
     
-    /// Allocation tolerance for normalization (0.01 = 1%)
-    static let allocationTolerance: Decimal = Decimal(string: "0.0001")!
+    /// Allocation tolerance for normalization (0.0001 = 0.01%)
+    static let allocationTolerance: Double = 0.0001
     
-    /// Default epsilon for Double comparisons
+    /// Default epsilon for floating point comparisons
     static let doubleEpsilon: Double = 0.0001
 }
 
@@ -104,10 +105,10 @@ struct ThresholdBasedStrategy: RebalancingStrategy {
     }
     
     private func prioritizeOrders(_ orders: [RebalanceOrder]) -> [RebalanceOrder] {
-        orders.sorted { a, b in
-            if a.action == .sell && b.action == .buy { return true }
-            if a.action == .buy && b.action == .sell { return false }
-            return a.priority > b.priority
+        orders.sorted { lhs, rhs in
+            if lhs.action == .sell && rhs.action == .buy { return true }
+            if lhs.action == .buy && rhs.action == .sell { return false }
+            return lhs.priority > rhs.priority
         }
     }
 }
@@ -221,8 +222,11 @@ enum OrderFactory {
             // For now, continue but with lower priority
         }
         
-        // Calculate adjustment value
-        guard let adjustmentValue = calculateAdjustmentValue(drift: drift) else {
+        // Calculate adjustment value using actual portfolio total
+        guard let adjustmentValue = calculateAdjustmentValue(
+            drift: drift,
+            totalPortfolioValue: snapshot.totalValue
+        ) else {
             return nil
         }
         
@@ -263,12 +267,16 @@ enum OrderFactory {
         )
     }
     
-    private static func calculateAdjustmentValue(drift: PositionDrift) -> Double? {
-        // Handle edge case where currentWeight is 0
+    private static func calculateAdjustmentValue(
+        drift: PositionDrift,
+        totalPortfolioValue: Double
+    ) -> Double? {
+        // Handle edge case where currentWeight is 0 (new position)
         guard drift.currentWeight > FinancialConstants.doubleEpsilon else {
-            // Position doesn't exist yet, calculate based on drift
+            // Position doesn't exist yet, calculate based on target weight
             guard abs(drift.drift) > FinancialConstants.doubleEpsilon else { return nil }
-            return abs(drift.drift) * 100000  // Use a default portfolio value estimate
+            // Use actual total portfolio value × target weight for new positions
+            return abs(drift.drift) * totalPortfolioValue
         }
         
         guard let adjValue = drift.adjustmentValue else { return nil }
@@ -361,9 +369,9 @@ actor RebalancingEngine {
             throw RebalancingError.invalidSnapshot(snapshot.validationErrors)
         }
         
-        // Analyze drift
+        // Analyze drift using pure data structs (no CoreData objects)
         let analysis = try driftAnalyzer.analyze(
-            positions: snapshot.positions.map { $0.asPosition() },
+            positions: snapshot.positions.map { $0.asPositionData() },
             targetAllocation: snapshot.targetAllocation,
             totalValue: snapshot.totalValue
         )
@@ -383,17 +391,14 @@ actor RebalancingEngine {
             config: configuration
         )
         
-        // Track filtered orders
-        var filteredReasons: [FilteredOrderInfo] = []
-        for drift in analysis.significantDrifts {
-            let hasOrder = orders.contains { $0.symbol == drift.symbol }
-            if !hasOrder {
-                filteredReasons.append(FilteredOrderInfo(
-                    symbol: drift.symbol,
-                    reason: "Below minimum size or invalid"
-                ))
-            }
-        }
+        // Track filtered orders (optimized from O(n²) to O(n) using Set)
+        let orderSymbols = Set(orders.map { $0.symbol })
+        let filteredReasons: [FilteredOrderInfo] = analysis.significantDrifts
+            .filter { !orderSymbols.contains($0.symbol) }
+            .map { FilteredOrderInfo(
+                symbol: $0.symbol,
+                reason: "Below minimum size or invalid"
+            ) }
         
         guard !orders.isEmpty else {
             throw RebalancingError.allOrdersFiltered(filteredReasons)
@@ -425,7 +430,7 @@ actor RebalancingEngine {
         guard snapshot.isValid else { return false }
         
         return driftAnalyzer.needsRebalancing(
-            positions: snapshot.positions.map { $0.asPosition() },
+            positions: snapshot.positions.map { $0.asPositionData() },
             targetAllocation: snapshot.targetAllocation,
             totalValue: snapshot.totalValue
         )
@@ -461,14 +466,12 @@ actor RebalancingEngine {
 // MARK: - Helper Extensions
 
 private extension PositionSnapshot {
-    /// Converts snapshot back to Position-like struct for DriftAnalyzer
-    func asPosition() -> Position {
-        // Create a minimal Position for analysis
-        // This is a workaround since DriftAnalyzer expects CoreData Position
-        let position = Position()
-        position.symbol = symbol
-        position.shares = shares
-        position.currentPrice = currentPrice
-        return position
+    /// Converts snapshot to PositionData for DriftAnalyzer
+    /// Returns a pure struct instead of creating fake CoreData objects
+    func asPositionData() -> PositionData {
+        PositionData(
+            symbol: symbol,
+            currentValue: currentValue
+        )
     }
 }
