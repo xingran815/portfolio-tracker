@@ -8,6 +8,10 @@
 import CoreData
 import Foundation
 
+// MARK: - PositionProtocol Conformance
+
+extension Position: PositionProtocol {}
+
 // MARK: - Position Entity Extension
 extension Position {
     

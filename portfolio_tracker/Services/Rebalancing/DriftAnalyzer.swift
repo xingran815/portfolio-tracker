@@ -7,6 +7,15 @@
 
 import Foundation
 
+// MARK: - Position Protocol
+
+/// Protocol for position data needed by DriftAnalyzer
+/// Allows analysis of both CoreData Position and snapshot data
+protocol PositionProtocol: Sendable {
+    var symbol: String? { get }
+    var currentValue: Double? { get }
+}
+
 // MARK: - Analysis Constants
 
 /// Constants for drift analysis calculations
@@ -148,13 +157,13 @@ struct DriftAnalyzer: Sendable {
     
     /// Analyzes portfolio drift from target allocation
     /// - Parameters:
-    ///   - positions: Current positions
+    ///   - positions: Current positions (any type conforming to PositionProtocol)
     ///   - targetAllocation: Target allocation [symbol: weight]
     ///   - totalValue: Total portfolio value
     /// - Returns: Drift analysis result
     /// - Throws: DriftAnalysisError if analysis fails
-    func analyze(
-        positions: [Position],
+    func analyze<T: PositionProtocol>(
+        positions: [T],
         targetAllocation: [String: Double],
         totalValue: Double
     ) throws -> DriftAnalysis {
@@ -217,8 +226,8 @@ struct DriftAnalyzer: Sendable {
     }
     
     /// Quick check if rebalancing is needed
-    func needsRebalancing(
-        positions: [Position],
+    func needsRebalancing<T: PositionProtocol>(
+        positions: [T],
         targetAllocation: [String: Double],
         totalValue: Double
     ) -> Bool {
@@ -236,8 +245,8 @@ struct DriftAnalyzer: Sendable {
     
     // MARK: - Private Helpers
     
-    private func validateInputs(
-        positions: [Position],
+    private func validateInputs<T: PositionProtocol>(
+        positions: [T],
         targetAllocation: [String: Double],
         totalValue: Double
     ) throws {
@@ -273,8 +282,8 @@ struct DriftAnalyzer: Sendable {
         return allocation.mapValues { $0 / total }
     }
     
-    private func calculateDrift(
-        position: Position,
+    private func calculateDrift<T: PositionProtocol>(
+        position: T,
         targetWeight: Double,
         totalValue: Double
     ) -> PositionDrift {

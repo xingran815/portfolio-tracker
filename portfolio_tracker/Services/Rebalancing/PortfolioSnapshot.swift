@@ -35,14 +35,15 @@ struct PortfolioSnapshot: Sendable {
 }
 
 /// Immutable snapshot of position data
-struct PositionSnapshot: Sendable {
+/// Conforms to PositionProtocol for use with DriftAnalyzer
+struct PositionSnapshot: Sendable, PositionProtocol {
     let id: UUID?
-    let symbol: String
+    let symbol: String?  // Optional to match PositionProtocol and CoreData Position
     let name: String?
     let shares: Double
     let costBasis: Double
     let currentPrice: Double
-    let currentValue: Double
+    let currentValue: Double?  // Optional to match PositionProtocol
     let profitLoss: Double?
     let profitLossPercentage: Double?
     let assetType: AssetType
@@ -53,18 +54,32 @@ struct PositionSnapshot: Sendable {
     static func from(_ position: Position) -> PositionSnapshot {
         PositionSnapshot(
             id: position.id,
-            symbol: position.symbol ?? "Unknown",
+            symbol: position.symbol,  // Keep as optional to match protocol
             name: position.name,
             shares: position.shares,
             costBasis: position.costBasis,
             currentPrice: position.currentPrice,
-            currentValue: position.currentValue ?? 0,
+            currentValue: position.currentValue,  // Keep as optional to match protocol
             profitLoss: position.profitLoss,
             profitLossPercentage: position.profitLossPercentage,
             assetType: position.assetType,
             market: position.market,
             lastUpdated: position.lastUpdated
         )
+    }
+}
+
+// MARK: - PositionData (Pure Business Logic)
+
+/// Pure data struct for position analysis
+/// Used when creating positions from snapshots without CoreData
+struct PositionData: Sendable, PositionProtocol {
+    let symbol: String?
+    let currentValue: Double?
+    
+    init(symbol: String?, currentValue: Double?) {
+        self.symbol = symbol
+        self.currentValue = currentValue
     }
 }
 
@@ -81,7 +96,7 @@ extension PortfolioSnapshot {
     }
     
     /// Validation errors if any
-    var validationErrors: [String] {
+    nonisolated var validationErrors: [String] {
         var errors: [String] = []
         
         if positions.isEmpty {
