@@ -38,12 +38,12 @@ struct PortfolioSnapshot: Sendable {
 /// Conforms to PositionProtocol for use with DriftAnalyzer
 struct PositionSnapshot: Sendable, PositionProtocol {
     let id: UUID?
-    let symbol: String?  // Optional to match PositionProtocol and CoreData Position
+    let symbol: String?
     let name: String?
     let shares: Double
     let costBasis: Double
     let currentPrice: Double
-    let currentValue: Double?  // Optional to match PositionProtocol
+    let currentValue: Double?
     let profitLoss: Double?
     let profitLossPercentage: Double?
     let assetType: AssetType
@@ -54,12 +54,12 @@ struct PositionSnapshot: Sendable, PositionProtocol {
     static func from(_ position: Position) -> PositionSnapshot {
         PositionSnapshot(
             id: position.id,
-            symbol: position.symbol,  // Keep as optional to match protocol
+            symbol: position.symbol,
             name: position.name,
             shares: position.shares,
             costBasis: position.costBasis,
             currentPrice: position.currentPrice,
-            currentValue: position.currentValue,  // Keep as optional to match protocol
+            currentValue: position.currentValue,
             profitLoss: position.profitLoss,
             profitLossPercentage: position.profitLossPercentage,
             assetType: position.assetType,
