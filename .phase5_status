@@ -4,4 +4,98 @@ This branch implements Phase 5 - Portfolio drift analysis and rebalancing recomm
 
 See issue #4 for details.
 
-Status: In Progress
+## Status: ✅ COMPLETE
+
+## Deliverables
+
+- [x] DriftAnalyzer.swift - Calculate portfolio drift from target allocation
+- [x] RebalancePlan.swift - Plan model with buy/sell orders
+- [x] RebalancingEngine.swift - Generate rebalance recommendations
+- [x] test-rebalancing.swift - Test script
+
+## Features
+
+### Drift Analysis
+- Calculate current vs target allocation drift
+- 5% threshold detection (configurable)
+- Per-position and total drift metrics
+- Missing position detection
+
+### Rebalance Plan Generation
+- Buy/sell recommendations
+- Order prioritization (sell overweight first)
+- Tax-aware ordering (harvest losses first)
+- Cash-flow aware strategies
+
+### Rebalancing Strategies
+- Threshold-based (default)
+- Cash-flow aware
+- Tax-optimized
+
+### MPT-Based Optimization
+- Basic mean-variance optimization hints
+- Risk-adjusted return considerations
+
+### Scheduling
+- Next rebalancing date calculation
+- Overdue detection
+- Monthly/quarterly frequency support
+
+## Core Data Structures
+
+```swift
+DriftAnalysis:
+  - totalDrift: Double
+  - positions: [PositionDrift]
+  - needsRebalancing: Bool
+  - threshold: Double
+
+RebalancePlan:
+  - orders: [RebalanceOrder]
+  - totalBuyAmount: Double
+  - totalSellAmount: Double
+  - netCashNeeded: Double
+
+RebalanceOrder:
+  - symbol: String
+  - action: buy/sell
+  - shares: Double
+  - estimatedAmount: Double
+  - priority: high/medium/low
+```
+
+## Usage
+
+```swift
+// Create engine
+let engine = RebalancingEngine()
+
+// Check if rebalancing needed
+let needsRebalance = await engine.needsRebalancing(portfolio)
+
+// Generate plan
+let plan = try await engine.generatePlan(
+    for: portfolio,
+    availableCash: 10000.0
+)
+
+// Analyze drift
+let analysis = try await engine.analyzeDrift(for: portfolio)
+```
+
+## Testing
+
+```bash
+swift Scripts/test-rebalancing.swift
+```
+
+## Estimated Lines
+
+~600 lines (achieved)
+
+## Files Created
+
+- portfolio_tracker/Services/Rebalancing/DriftAnalyzer.swift (286 lines)
+- portfolio_tracker/Services/Rebalancing/RebalancePlan.swift (323 lines)
+- portfolio_tracker/Services/Rebalancing/RebalancingEngine.swift (398 lines)
+- Scripts/test-rebalancing.swift (116 lines)
