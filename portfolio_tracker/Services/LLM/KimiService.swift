@@ -28,12 +28,15 @@ actor KimiService: LLMServiceProtocol {
     enum APIEndpoint: String, Sendable {
         case moonshot = "https://api.moonshot.cn/v1"       // platform.moonshot.cn
         case kimiWeb = "https://kimi.com/api/v1"            // kimi.com web platform  
-        case kimiCoding = "https://api.kimi.com/coding/v1"  // kimi.com coding API (your key works here!)
+        case kimiCoding = "https://api.kimi.com/coding/v1"  // kimi.com coding API
         case custom                                    // Custom endpoint (set via init)
     }
     
     /// Custom base URL for custom endpoint
     private let customBaseURL: String?
+    
+    /// Custom headers to add to requests
+    private let customHeaders: [String: String]?
     
     private let endpoint: APIEndpoint
     private var baseURL: String { 
@@ -48,21 +51,27 @@ actor KimiService: LLMServiceProtocol {
     init(
         apiKeyManager: APIKeyManager = .shared,
         configuration: LLMConfiguration = .default,
-        urlSession: URLSession = .shared,
-        endpoint: APIEndpoint = .kimiCoding,  // Default to kimiCoding for your key
+        urlSession: URLSession? = nil,
+        endpoint: APIEndpoint = .kimiCoding,
         customBaseURL: String? = nil,
         customHeaders: [String: String]? = nil
     ) {
         self.apiKeyManager = apiKeyManager
         self.configuration = configuration
-        self.urlSession = urlSession
         self.endpoint = endpoint
         self.customBaseURL = customBaseURL
         self.customHeaders = customHeaders
+        
+        // Configure URLSession with timeout
+        if let urlSession = urlSession {
+            self.urlSession = urlSession
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = configuration.requestTimeout
+            config.timeoutIntervalForResource = configuration.requestTimeout * 2
+            self.urlSession = URLSession(configuration: config)
+        }
     }
-    
-    /// Custom headers to add to requests
-    private let customHeaders: [String: String]?
     
     // MARK: - LLMServiceProtocol
     
@@ -70,7 +79,7 @@ actor KimiService: LLMServiceProtocol {
         _ message: String,
         context: ConversationContext,
         history: [ChatMessage]
-    ) -> AsyncStream<String> {
+    ) -> AsyncStream<Result<String, LLMServiceError>> {
         AsyncStream { continuation in
             let task = Task {
                 do {
@@ -89,8 +98,8 @@ actor KimiService: LLMServiceProtocol {
                     
                     logger.info("Sending message to Kimi API")
                     
-                    // Perform streaming request
-                    let (bytes, response) = try await urlSession.bytes(for: request)
+                    // Perform request with retry logic
+                    let (bytes, response) = try await performRequestWithRetry(request: request)
                     
                     // Check HTTP response
                     try validateResponse(response)
@@ -104,7 +113,7 @@ actor KimiService: LLMServiceProtocol {
                         
                         // Parse SSE line
                         if let content = parseSSELine(line) {
-                            continuation.yield(content)
+                            continuation.yield(.success(content))
                         }
                     }
                     
@@ -113,9 +122,12 @@ actor KimiService: LLMServiceProtocol {
                     
                 } catch let error as LLMServiceError {
                     logger.error("LLM error: \(error.localizedDescription)")
+                    continuation.yield(.failure(error))
                     continuation.finish()
                 } catch {
                     logger.error("Unexpected error: \(error.localizedDescription)")
+                    let wrappedError = LLMServiceError.networkError(error.localizedDescription)
+                    continuation.yield(.failure(wrappedError))
                     continuation.finish()
                 }
             }
@@ -127,9 +139,13 @@ actor KimiService: LLMServiceProtocol {
         }
     }
     
-    func validateAPIKey() async throws -> Bool {
+    func validateAPIKey() async -> APIKeyValidationResult {
         do {
-            _ = try await apiKeyManager.getKey(for: .kimi)
+            // Check if API key exists
+            guard (try? await apiKeyManager.getKey(for: .kimi)) != nil else {
+                return .notConfigured
+            }
+            
             // Make a simple test request
             let stream = sendMessage(
                 "Hello",
@@ -143,18 +159,80 @@ actor KimiService: LLMServiceProtocol {
             )
             
             var receivedContent = false
-            for await _ in stream {
-                receivedContent = true
-                break // Just need to receive one chunk to validate
+            for await result in stream {
+                switch result {
+                case .success:
+                    receivedContent = true
+                case .failure(let error):
+                    switch error {
+                    case .invalidAPIKey:
+                        return .invalid
+                    case .rateLimited:
+                        return .rateLimited
+                    case .serviceUnavailable:
+                        return .serviceUnavailable
+                    case .networkError(let message):
+                        return .networkError(message)
+                    default:
+                        return .networkError(error.localizedDescription)
+                    }
+                }
+                if receivedContent { break }
             }
             
-            return receivedContent
-        } catch {
-            return false
+            return receivedContent ? .valid : .invalid
         }
     }
     
     // MARK: - Private Methods
+    
+    /// Performs a request with retry logic for transient failures
+    private func performRequestWithRetry(request: URLRequest) async throws -> (URLSession.AsyncBytes, URLResponse) {
+        var lastError: Error?
+        
+        for attempt in 0..<configuration.maxRetries {
+            do {
+                let (bytes, response) = try await urlSession.bytes(for: request)
+                return (bytes, response)
+            } catch {
+                lastError = error
+                
+                // Check if error is retryable
+                if isRetryableError(error) && attempt < configuration.maxRetries - 1 {
+                    logger.warning("Request failed (attempt \(attempt + 1)), retrying after delay...")
+                    try await Task.sleep(nanoseconds: UInt64(configuration.retryDelay * Double(attempt + 1) * 1_000_000_000))
+                } else {
+                    break
+                }
+            }
+        }
+        
+        if let urlError = lastError as? URLError {
+            switch urlError.code {
+            case .timedOut:
+                throw LLMServiceError.requestTimeout
+            case .notConnectedToInternet:
+                throw LLMServiceError.networkError("No internet connection")
+            default:
+                throw LLMServiceError.networkError(urlError.localizedDescription)
+            }
+        }
+        
+        throw LLMServiceError.maxRetriesExceeded
+    }
+    
+    /// Determines if an error is retryable
+    private func isRetryableError(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut, .networkConnectionLost, .notConnectedToInternet:
+                return true
+            default:
+                return false
+            }
+        }
+        return false
+    }
     
     private func buildRequest(
         message: String,
@@ -163,7 +241,7 @@ actor KimiService: LLMServiceProtocol {
         apiKey: String
     ) throws -> URLRequest {
         guard let url = buildURL() else {
-            throw LLMServiceError.invalidResponse
+            throw LLMServiceError.invalidResponse(statusCode: nil)
         }
         
         let messages = buildMessages(message: message, context: context, history: history)
@@ -194,16 +272,23 @@ actor KimiService: LLMServiceProtocol {
         var messages: [[String: String]] = []
         
         // Add system prompt
+        let systemPrompt = SystemPrompts.basePrompt + SystemPrompts.buildContextString(context: context)
         messages.append([
             "role": "system",
-            "content": SystemPrompts.portfolioAdvisor(context: context)
+            "content": systemPrompt
         ])
         
-        // Add history (limit to last 10 messages)
-        for chatMessage in history.suffix(10) {
+        // Add history with character limit
+        var totalLength = messages[0]["content"]?.count ?? 0
+        let limitedHistory = limitHistory(history, maxLength: configuration.maxContextLength - totalLength)
+        
+        for chatMessage in limitedHistory {
+            let messageContent = chatMessage.content
+            totalLength += messageContent.count
+            
             messages.append([
                 "role": chatMessage.role.rawValue,
-                "content": chatMessage.content
+                "content": messageContent
             ])
         }
         
@@ -211,6 +296,24 @@ actor KimiService: LLMServiceProtocol {
         messages.append(["role": "user", "content": message])
         
         return messages
+    }
+    
+    /// Limits history to fit within context length
+    private func limitHistory(_ history: [ChatMessage], maxLength: Int) -> [ChatMessage] {
+        var result: [ChatMessage] = []
+        var currentLength = 0
+        
+        // Iterate from most recent, keeping messages that fit
+        for message in history.suffix(10).reversed() {
+            let messageLength = message.content.count
+            if currentLength + messageLength > maxLength {
+                break
+            }
+            currentLength += messageLength
+            result.insert(message, at: 0)
+        }
+        
+        return result
     }
     
     private func buildRequestBody(messages: [[String: String]]) -> [String: Any] {
@@ -227,10 +330,9 @@ actor KimiService: LLMServiceProtocol {
     private func resolveModelName() -> String {
         switch endpoint {
         case .kimiWeb, .kimiCoding:
-            return "kimi-latest"
-        case .custom:
-            return "claude-3-haiku-20240307"
-        case .moonshot:
+            // For Kimi endpoints, use configuration.model or default to kimi-latest
+            return configuration.model.hasPrefix("kimi") ? configuration.model : "kimi-latest"
+        case .custom, .moonshot:
             return configuration.model
         }
     }
@@ -249,7 +351,6 @@ actor KimiService: LLMServiceProtocol {
         case .custom:
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
             request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-            request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
         }
     }
     
@@ -262,7 +363,7 @@ actor KimiService: LLMServiceProtocol {
     
     private func validateResponse(_ response: URLResponse) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMServiceError.invalidResponse
+            throw LLMServiceError.invalidResponse(statusCode: nil)
         }
         
         switch httpResponse.statusCode {
@@ -275,7 +376,7 @@ actor KimiService: LLMServiceProtocol {
         case 500...599:
             throw LLMServiceError.serviceUnavailable
         default:
-            throw LLMServiceError.invalidResponse
+            throw LLMServiceError.invalidResponse(statusCode: httpResponse.statusCode)
         }
     }
     
@@ -314,52 +415,55 @@ actor KimiService: LLMServiceProtocol {
 // MARK: - System Prompts
 
 enum SystemPrompts {
-    /// Generates system prompt for portfolio advisor
-    static func portfolioAdvisor(context: ConversationContext) -> String {
-        var prompt = """
-You are a professional investment advisor specializing in portfolio management and rebalancing strategies.
-
-Your role:
-1. Analyze the user's portfolio and provide actionable advice
-2. Explain rebalancing recommendations clearly
-3. Answer questions about investment strategies
-4. Consider risk tolerance and investment goals
-5. Provide educational context when relevant
-
-Guidelines:
-- Be concise but thorough
-- Use specific numbers and percentages when analyzing
-- Explain the reasoning behind recommendations
-- Consider tax implications when relevant
-- Always maintain a professional, helpful tone
-- If you don't know something, admit it rather than guessing
-"""
+    /// Cached system prompt base to avoid rebuilding
+    static let basePrompt = """
+    You are a professional investment advisor specializing in portfolio management and rebalancing strategies.
+    
+    Your role:
+    1. Analyze the user's portfolio and provide actionable advice
+    2. Explain rebalancing recommendations clearly
+    3. Answer questions about investment strategies
+    4. Consider risk tolerance and investment goals
+    5. Provide educational context when relevant
+    
+    Guidelines:
+    - Be concise but thorough
+    - Use specific numbers and percentages when analyzing
+    - Explain the reasoning behind recommendations
+    - Consider tax implications when relevant
+    - Always maintain a professional, helpful tone
+    - If you don't know something, admit it rather than guessing
+    """
+    
+    /// Builds context-specific part of the prompt
+    static func buildContextString(context: ConversationContext) -> String {
+        var contextString = ""
         
         // Add portfolio context if available
         if let portfolioName = context.portfolioName {
-            prompt += "\n\nPortfolio: \(portfolioName)"
+            contextString += "\n\nPortfolio: \(portfolioName)"
         }
         
         if let riskProfile = context.riskProfile {
-            prompt += "\nRisk Profile: \(riskProfile)"
+            contextString += "\nRisk Profile: \(riskProfile)"
         }
         
         if !context.positions.isEmpty {
-            prompt += "\n\nCurrent Positions:"
+            contextString += "\n\nCurrent Positions:"
             for position in context.positions {
-                prompt += "\n- \(position.symbol): \(String(format: "%.2f", position.shares)) shares"
+                contextString += "\n- \(position.symbol): \(String(format: "%.2f", position.shares)) shares"
             }
         }
         
         if let allocation = context.targetAllocation, !allocation.isEmpty {
-            prompt += "\n\nTarget Allocation:"
+            contextString += "\n\nTarget Allocation:"
             for (symbol, percentage) in allocation {
-                prompt += "\n- \(symbol): \(String(format: "%.1f", percentage * 100))%"
+                contextString += "\n- \(symbol): \(String(format: "%.1f", percentage * 100))%"
             }
         }
         
-        prompt += "\n\nRemember: This is educational advice. Always consult with a licensed financial advisor for personalized recommendations."
+        contextString += "\n\nRemember: This is educational advice. Always consult with a licensed financial advisor for personalized recommendations."
         
-        return prompt
+        return contextString
     }
 }

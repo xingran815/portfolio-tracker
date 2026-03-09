@@ -25,6 +25,9 @@ final class ChatViewModel {
     private var currentTask: Task<Void, Never>?
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "ChatViewModel")
     
+    // Track current assistant message ID for safe updates
+    private var currentAssistantMessageId: UUID?
+    
     // MARK: - Initialization
     
     init(
@@ -50,6 +53,7 @@ final class ChatViewModel {
         inputText = ""
         isLoading = true
         errorMessage = nil
+        currentAssistantMessageId = nil
         
         currentTask = Task {
             await streamResponse(to: messageToSend)
@@ -67,15 +71,12 @@ final class ChatViewModel {
         cancelStreaming()
         messages.removeAll()
         errorMessage = nil
+        currentAssistantMessageId = nil
     }
     
     /// Checks if LLM is configured
-    func isConfigured() async -> Bool {
-        do {
-            return try await llmService.validateAPIKey()
-        } catch {
-            return false
-        }
+    func isConfigured() async -> APIKeyValidationResult {
+        await llmService.validateAPIKey()
     }
     
     // MARK: - Private Methods
@@ -84,42 +85,65 @@ final class ChatViewModel {
         // Build context from portfolio
         let context = buildContext()
         
-        // Create assistant message placeholder
+        // Create assistant message placeholder with unique ID
         let assistantMessage = ChatMessage(role: .assistant, content: "")
+        let assistantId = assistantMessage.id
+        currentAssistantMessageId = assistantId
         messages.append(assistantMessage)
-        let assistantIndex = messages.count - 1
         
         // Stream response
-        do {
-            let stream = try await llmService.sendMessage(
-                message,
-                context: context,
-                history: Array(messages.dropLast()) // Exclude current assistant message
-            )
-            
-            var fullResponse = ""
-            
-            for try await chunk in stream {
-                // Check for cancellation
-                if Task.isCancelled {
-                    break
-                }
-                
-                fullResponse += chunk
-                messages[assistantIndex] = ChatMessage(
-                    id: assistantMessage.id,
-                    role: .assistant,
-                    content: fullResponse
-                )
+        let stream = await llmService.sendMessage(
+            message,
+            context: context,
+            history: Array(messages.dropLast()) // Exclude current assistant message
+        )
+        
+        var fullResponse = ""
+        
+        for await result in stream {
+            // Check for cancellation
+            if Task.isCancelled {
+                break
             }
             
-            logger.info("Received response: \(fullResponse.prefix(100))...")
-        } catch {
-            errorMessage = error.localizedDescription
-            logger.error("Streaming error: \(error.localizedDescription)")
+            switch result {
+            case .success(let chunk):
+                fullResponse += chunk
+                updateAssistantMessage(id: assistantId, content: fullResponse)
+                
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+                logger.error("Streaming error: \(error.localizedDescription)")
+                // Remove the empty assistant message on error
+                removeMessage(id: assistantId)
+                currentAssistantMessageId = nil
+                isLoading = false
+                return
+            }
         }
         
+        logger.info("Received response: \(fullResponse.prefix(100))...")
+        currentAssistantMessageId = nil
         isLoading = false
+    }
+    
+    /// Safely updates assistant message by ID (prevents race conditions)
+    private func updateAssistantMessage(id: UUID, content: String) {
+        // Only update if this is still the current assistant message
+        guard currentAssistantMessageId == id else { return }
+        
+        if let index = messages.firstIndex(where: { $0.id == id }) {
+            messages[index] = ChatMessage(
+                id: id,
+                role: .assistant,
+                content: content
+            )
+        }
+    }
+    
+    /// Removes a message by ID
+    private func removeMessage(id: UUID) {
+        messages.removeAll { $0.id == id }
     }
     
     private func buildContext() -> ConversationContext {
@@ -148,5 +172,14 @@ final class ChatViewModel {
             riskProfile: portfolio.riskProfile.displayName,
             targetAllocation: portfolio.targetAllocation
         )
+    }
+}
+
+// MARK: - Factory Extension
+
+extension ChatViewModel {
+    /// Creates a ChatViewModel with mock LLM service for testing
+    static func mock(portfolio: Portfolio? = nil) -> ChatViewModel {
+        ChatViewModel(llmService: MockLLMService(), portfolio: portfolio)
     }
 }
