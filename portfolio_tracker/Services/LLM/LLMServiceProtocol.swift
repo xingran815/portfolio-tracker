@@ -80,21 +80,21 @@ enum LLMServiceError: LocalizedError {
 }
 
 /// Protocol for LLM services
-protocol LLMServiceProtocol: Sendable {
+protocol LLMServiceProtocol: Actor {
     /// Sends a message and returns streaming response
     /// - Parameters:
     ///   - message: User's message
     ///   - context: Portfolio context for personalized responses
     ///   - history: Previous conversation history
     /// - Returns: AsyncStream of response chunks
-    @Sendable func sendMessage(
+    func sendMessage(
         _ message: String,
         context: ConversationContext,
         history: [ChatMessage]
     ) -> AsyncStream<String>
     
     /// Validates the API key by making a test request
-    @Sendable func validateAPIKey() async throws -> Bool
+    func validateAPIKey() async throws -> Bool
 }
 
 /// Configuration for LLM requests
