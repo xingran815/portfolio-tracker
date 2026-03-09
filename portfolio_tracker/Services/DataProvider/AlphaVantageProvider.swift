@@ -121,7 +121,9 @@ actor AlphaVantageProvider: DataProviderProtocol {
     
     /// Builds the API request URL
     private func buildURL(symbol: String, apiKey: String) throws -> URL {
-        var components = URLComponents(string: baseURL)!
+        guard var components = URLComponents(string: baseURL) else {
+            throw DataProviderError.invalidSymbol(symbol)
+        }
         
         // Format symbol for Alpha Vantage
         let formattedSymbol = formatSymbol(symbol)
