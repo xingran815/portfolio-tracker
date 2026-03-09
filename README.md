@@ -2,49 +2,94 @@
 
 macOS portfolio tracking application with AI-powered rebalancing advice.
 
+## 🔐 Security Notice
+
+**This repository is public. API keys and personal data are NEVER committed.**
+
+- API keys are stored in **macOS Keychain** (secure, encrypted)
+- Portfolio data stays on your **local device** only
+- No data is sent to external servers except API calls
+
+See [SECURITY.md](SECURITY.md) for details.
+
 ## Requirements
 
 - macOS 14.0+
 - Xcode 15.0+
 - Swift 6.0
+- Alpha Vantage API key (free tier: 25 req/day)
+- Kimi API key (optional, for AI features)
+
+## Setup
+
+### 1. Clone and Open
+
+```bash
+git clone https://github.com/xingran815/portfolio-tracker.git
+cd portfolio-tracker
+open portfolio_tracker.xcodeproj
+```
+
+### 2. Configure API Keys
+
+**Alpha Vantage** (for stock prices):
+1. Get free API key at [alphavantage.co/support/#api-key](https://www.alphavantage.co/support/#api-key)
+2. In the app: Settings → API Keys → Alpha Vantage
+
+**Kimi API** (optional, for AI advisor):
+1. Get API key at [platform.moonshot.cn](https://platform.moonshot.cn)
+2. In the app: Settings → API Keys → Kimi API
+
+API keys are stored securely in macOS Keychain and never leave your device.
+
+### 3. Build and Run
+
+```bash
+Cmd+R in Xcode
+```
 
 ## Project Structure
 
 ```
 portfolio_tracker/
-├── Models/
-│   ├── Enums.swift               # RiskProfile, AssetType, Market, etc.
-│   ├── Portfolio+Extensions.swift # Portfolio entity extensions
-│   ├── Position+Extensions.swift  # Position entity extensions
-│   └── Transaction+Extensions.swift # Transaction entity extensions
-├── Utils/
-│   └── Formatters.swift          # Currency/percentage formatters
-├── Services/
-│   ├── DataProvider/             # Price fetching (Phase 2)
-│   ├── LLM/                      # Chat service (Phase 3)
-│   └── Parser/                   # Markdown parser (Phase 4)
-├── ViewModels/                   # SwiftUI view models (Phase 6)
-├── Views/                        # SwiftUI views (Phase 6)
-├── Persistence.swift             # CoreData controller
-├── ContentView.swift             # Main view
-└── portfolio_trackerApp.swift    # App entry
+├── Models/                         # CoreData entities
+│   ├── Enums.swift                 # RiskProfile, AssetType, Market
+│   ├── Portfolio+Extensions.swift  # Portfolio business logic
+│   ├── Position+Extensions.swift   # Position business logic
+│   └── Transaction+Extensions.swift # Transaction business logic
+├── Services/                       # Business logic
+│   ├── APIKeyManager.swift         # Secure keychain storage
+│   ├── DataProvider/               # Price fetching (Phase 2)
+│   ├── LLM/                        # Chat service (Phase 3)
+│   └── Parser/                     # Markdown parser (Phase 4)
+├── ViewModels/                     # SwiftUI view models (Phase 6)
+├── Views/                          # SwiftUI views (Phase 6)
+├── Utils/                          # Helper utilities
+├── Persistence.swift               # CoreData controller
+├── ContentView.swift               # Main view
+└── portfolio_trackerApp.swift      # App entry
 ```
-
-## Setup
-
-1. Open `portfolio_tracker/portfolio_tracker.xcodeproj` in Xcode
-2. Follow `MIGRATION_GUIDE.md` to configure CoreData model
-3. Build and run (⌘+R)
 
 ## Architecture
 
 ```
 SwiftUI → ViewModels → Services → CoreData
                 ↓
+         APIKeyManager (Keychain)
+                ↓
          AlphaVantage API
                 ↓
          Kimi API (LLM)
 ```
+
+## Data Privacy
+
+| Data Type | Storage | Encrypted |
+|-----------|---------|-----------|
+| API Keys | macOS Keychain | ✅ Yes |
+| Portfolio Data | Local CoreData | ✅ FileVault |
+| Cache | ~/Library/Caches | ❌ No (temporary) |
+| Settings | UserDefaults | ❌ No |
 
 ## Phase Status
 
@@ -55,3 +100,26 @@ SwiftUI → ViewModels → Services → CoreData
 - [ ] Phase 5: Rebalancing Engine
 - [ ] Phase 6: SwiftUI Views
 - [ ] Phase 7: Swift Testing
+
+See [GitHub Issues](https://github.com/xingran815/portfolio-tracker/issues) for detailed phase breakdown.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit changes: `git commit -am '[Phase X] Description'`
+4. Push to branch: `git push origin feature/my-feature`
+5. Create a Pull Request
+
+**Note:** All PRs require:
+- ✅ Build passes
+- ✅ SwiftLint passes  
+- ✅ 1 code review approval
+
+## License
+
+MIT License - See [LICENSE](LICENSE) file
+
+## Disclaimer
+
+This app is for educational purposes. Not financial advice. Always consult a professional financial advisor before making investment decisions.

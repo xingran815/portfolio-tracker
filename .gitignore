@@ -8,6 +8,7 @@ project.xcworkspace/xcuserdata/
 *.moved-aside
 *.xcscmblueprint
 *.xcscheme
+*.xcscheme/xcschememanagement.plist
 
 # Build generated
 build/
@@ -63,10 +64,70 @@ Icon?
 .VolumeIcon.icns
 .com.apple.timemachine.donotpresent
 
-# App specific - exclude API keys
+# ============================================
+# SECURITY - NEVER COMMIT THESE
+# ============================================
+
+# API Keys and Secrets
 *.xcconfig
 config.plist
 Secrets.swift
+APIKeys.swift
+Keys.swift
+*.key
+*.pem
+*.p12
+*.mobileprovision
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# CoreData store (user data)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+
+# Archive files
+*.ipa
+*.pkg
+
+# Personal portfolio exports
+*.csv
+*.json
+*.md
+!README.md
+!CONTRIBUTING.md
+!CHANGELOG.md
+!LICENSE*
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
+
+# Node (if using any JS tools)
+node_modules/
+npm-debug.log*
+
+# Python (if using any scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
 
 # Planning docs (keep at parent level only)
 ../AGENTS.md
