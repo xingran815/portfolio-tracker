@@ -27,7 +27,7 @@ jobs:
     - name: Build Project
       run: |
         xcodebuild clean build \
-          -project portfolio_tracker/portfolio_tracker.xcodeproj \
+          -project portfolio_tracker.xcodeproj \
           -scheme portfolio_tracker \
           -destination 'platform=macOS' \
           CODE_SIGN_IDENTITY="" \
@@ -37,7 +37,7 @@ jobs:
     - name: Run Tests
       run: |
         xcodebuild test \
-          -project portfolio_tracker/portfolio_tracker.xcodeproj \
+          -project portfolio_tracker.xcodeproj \
           -scheme portfolio_tracker \
           -destination 'platform=macOS' \
           CODE_SIGN_IDENTITY="" \

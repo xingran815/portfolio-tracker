@@ -23,7 +23,7 @@ jobs:
     - name: Build Release
       run: |
         xcodebuild archive \
-          -project portfolio_tracker/portfolio_tracker.xcodeproj \
+          -project portfolio_tracker.xcodeproj \
           -scheme portfolio_tracker \
           -archivePath build/portfolio_tracker.xcarchive \
           -destination 'platform=macOS' \
@@ -35,7 +35,7 @@ jobs:
         xcodebuild -exportArchive \
           -archivePath build/portfolio_tracker.xcarchive \
           -exportPath build/export \
-          -exportOptionsPlist portfolio_tracker/exportOptions.plist
+          -exportOptionsPlist exportOptions.plist
       continue-on-error: true
       
     - name: Create Zip
