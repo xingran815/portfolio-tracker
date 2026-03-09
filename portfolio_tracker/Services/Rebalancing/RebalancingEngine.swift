@@ -451,23 +451,14 @@ private extension RebalancingEngine {
 extension RebalancingEngine {
     
     /// Generates a simple rebalance plan with default settings
-    /// - Parameter portfolio: Portfolio to rebalance
+    /// - Parameters:
+    ///   - portfolio: Portfolio to rebalance (accessed from MainActor)
+    ///   - totalValue: Total portfolio value
     /// - Returns: Rebalance plan
-    func generateSimplePlan(for portfolio: Portfolio) async throws -> RebalancePlan {
-        try generatePlan(for: portfolio, availableCash: portfolio.totalValue)
-    }
-    
-    /// Gets drift analysis for a portfolio
-    /// - Parameter portfolio: Portfolio to analyze
-    /// - Returns: Drift analysis
-    func analyzeDrift(for portfolio: Portfolio) throws -> DriftAnalysis {
-        let positionSet = portfolio.positions as? Set<Position> ?? []
-        let positions = Array(positionSet)
-        
-        return try driftAnalyzer.analyze(
-            positions: positions,
-            targetAllocation: portfolio.targetAllocation,
-            totalValue: portfolio.totalValue
-        )
+    func generateSimplePlan(
+        for portfolio: Portfolio,
+        totalValue: Double
+    ) async throws -> RebalancePlan {
+        try generatePlan(for: portfolio, availableCash: totalValue)
     }
 }

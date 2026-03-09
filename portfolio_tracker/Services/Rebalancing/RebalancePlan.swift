@@ -8,7 +8,7 @@
 import Foundation
 
 /// Action type for rebalance orders
-enum OrderAction: String, Codable, Sendable, CaseIterable {
+enum OrderAction: String, Sendable, CaseIterable {
     case buy
     case sell
     
@@ -28,7 +28,7 @@ enum OrderAction: String, Codable, Sendable, CaseIterable {
 }
 
 /// Priority level for order execution
-enum OrderPriority: Int, Codable, Sendable, Comparable {
+enum OrderPriority: Int, Sendable, Comparable {
     case high = 3
     case medium = 2
     case low = 1
@@ -39,7 +39,7 @@ enum OrderPriority: Int, Codable, Sendable, Comparable {
 }
 
 /// Individual rebalance order
-struct RebalanceOrder: Identifiable, Codable, Sendable {
+struct RebalanceOrder: Identifiable, Sendable {
     let id: UUID
     let symbol: String
     let action: OrderAction
@@ -73,7 +73,7 @@ struct RebalanceOrder: Identifiable, Codable, Sendable {
 }
 
 /// Complete rebalance plan
-struct RebalancePlan: Identifiable, Codable, Sendable {
+struct RebalancePlan: Identifiable, Sendable {
     let id: UUID
     let portfolioId: UUID?
     let portfolioName: String?
@@ -129,7 +129,7 @@ struct RebalancePlan: Identifiable, Codable, Sendable {
 }
 
 /// Strategy for order execution
-enum ExecutionStrategy: String, Codable, Sendable, CaseIterable {
+enum ExecutionStrategy: String, Sendable, CaseIterable {
     /// Execute all orders at once
     case immediate
     
