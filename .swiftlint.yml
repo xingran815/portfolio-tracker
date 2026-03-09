@@ -1,0 +1,44 @@
+disabled_rules:
+  - trailing_whitespace
+  - line_length
+
+opt_in_rules:
+  - empty_count
+  - empty_string
+  - explicit_init
+  - force_unwrapping
+  - modifier_order
+  - redundant_nil_coalescing
+  - sorted_first_last
+  - unused_import
+
+excluded:
+  - DerivedData
+  - build
+  - "*.xcdatamodeld"
+  - portfolio_tracker/Models/*+CoreData*.swift
+
+line_length:
+  warning: 120
+  error: 150
+  ignores_urls: true
+  ignores_function_declarations: true
+  ignores_comments: true
+
+function_body_length:
+  warning: 60
+  error: 100
+
+type_body_length:
+  warning: 300
+  error: 500
+
+file_length:
+  warning: 500
+  error: 1000
+
+cyclomatic_complexity:
+  warning: 10
+  error: 20
+
+reporter: "xcode"
