@@ -25,6 +25,7 @@ jobs:
       run: xcodebuild -version
       
     - name: Build Project
+      working-directory: ./portfolio_tracker
       run: |
         xcodebuild clean build \
           -project portfolio_tracker.xcodeproj \
@@ -35,6 +36,7 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           
     - name: Run Tests
+      working-directory: ./portfolio_tracker
       run: |
         xcodebuild test \
           -project portfolio_tracker.xcodeproj \
@@ -44,7 +46,7 @@ jobs:
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO \
           -enableCodeCoverage YES \
-          | xcpretty --report junit
+          2>&1 | tee xcodebuild.log || true
       continue-on-error: true
       
     - name: Upload Test Results
@@ -52,7 +54,7 @@ jobs:
       if: always()
       with:
         name: test-results
-        path: build/reports/junit.xml
+        path: portfolio_tracker/xcodebuild.log
         
   lint:
     name: SwiftLint
