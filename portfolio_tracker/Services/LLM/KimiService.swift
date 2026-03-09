@@ -28,10 +28,19 @@ actor KimiService: LLMServiceProtocol {
     enum APIEndpoint: String, Sendable {
         case moonshot = "https://api.moonshot.cn/v1"      // platform.moonshot.cn
         case kimiWeb = "https://kimi.com/api/v1"           // kimi.com web platform
+        case custom                                   // Custom endpoint (set via init)
     }
     
+    /// Custom base URL for custom endpoint
+    private let customBaseURL: String?
+    
     private let endpoint: APIEndpoint
-    private var baseURL: String { endpoint.rawValue }
+    private var baseURL: String { 
+        if endpoint == .custom, let customURL = customBaseURL {
+            return customURL
+        }
+        return endpoint.rawValue 
+    }
     
     // MARK: - Initialization
     
@@ -39,13 +48,20 @@ actor KimiService: LLMServiceProtocol {
         apiKeyManager: APIKeyManager = .shared,
         configuration: LLMConfiguration = .default,
         urlSession: URLSession = .shared,
-        endpoint: APIEndpoint = .moonshot
+        endpoint: APIEndpoint = .moonshot,
+        customBaseURL: String? = nil,
+        customHeaders: [String: String]? = nil
     ) {
         self.apiKeyManager = apiKeyManager
         self.configuration = configuration
         self.urlSession = urlSession
         self.endpoint = endpoint
+        self.customBaseURL = customBaseURL
+        self.customHeaders = customHeaders
     }
+    
+    /// Custom headers to add to requests
+    private let customHeaders: [String: String]?
     
     // MARK: - LLMServiceProtocol
     
@@ -191,8 +207,18 @@ actor KimiService: LLMServiceProtocol {
         ])
         
         // Build request body
+        let modelName: String
+        switch endpoint {
+        case .kimiWeb:
+            modelName = "kimi-latest"
+        case .custom:
+            modelName = "claude-3-haiku-20240307"  // Try Claude for custom endpoints
+        case .moonshot:
+            modelName = configuration.model
+        }
+        
         let requestBody: [String: Any] = [
-            "model": endpoint == .kimiWeb ? "kimi-latest" : configuration.model,
+            "model": modelName,
             "messages": messages,
             "temperature": configuration.temperature,
             "max_tokens": configuration.maxTokens,
@@ -203,16 +229,27 @@ actor KimiService: LLMServiceProtocol {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         
         // Authentication based on endpoint
         switch endpoint {
         case .moonshot:
-            // Moonshot platform: Bearer token
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         case .kimiWeb:
-            // Kimi web platform: May use different auth, try x-api-key
             request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        case .custom:
+            // For custom endpoints, try multiple auth methods
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
+        }
+        
+        // Add custom headers if provided
+        if let headers = customHeaders {
+            for (key, value) in headers {
+                request.setValue(value, forHTTPHeaderField: key)
+            }
         }
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
