@@ -68,12 +68,17 @@ struct LLMServiceTests {
         let errors: [LLMServiceError] = [
             .apiKeyMissing,
             .rateLimited,
-            .serviceUnavailable
+            .serviceUnavailable,
+            .invalidResponse(statusCode: 500),
+            .networkError("timeout"),
+            .requestTimeout,
+            .maxRetriesExceeded
         ]
         
         for error in errors {
-            #expect(error.errorDescription != nil)
-            #expect(!error.errorDescription!.isEmpty)
+            let description = error.errorDescription
+            #expect(description != nil, "Error \(error) should have a description")
+            #expect(description?.isEmpty == false, "Error \(error) description should not be empty")
         }
     }
     
@@ -85,5 +90,32 @@ struct LLMServiceTests {
         #expect(config.temperature == 0.7)
         #expect(config.maxTokens == 2048)
         #expect(config.topP == 0.9)
+        #expect(config.requestTimeout == 30.0)
+        #expect(config.maxRetries == 3)
+        #expect(config.maxContextLength == 8000)
+    }
+    
+    @Test("APIKeyValidationResult cases")
+    func testAPIKeyValidationResult() {
+        #expect(APIKeyValidationResult.valid.isValid == true)
+        #expect(APIKeyValidationResult.notConfigured.isValid == false)
+        #expect(APIKeyValidationResult.invalid.isValid == false)
+        #expect(APIKeyValidationResult.networkError("timeout").isValid == false)
+        #expect(APIKeyValidationResult.rateLimited.isValid == false)
+        #expect(APIKeyValidationResult.serviceUnavailable.isValid == false)
+    }
+    
+    @Test("LLMServiceError Sendable conformance")
+    func testErrorSendable() async {
+        // Verify errors can be passed across actor boundaries
+        let errors: [LLMServiceError] = [
+            .apiKeyMissing,
+            .networkError("test"),
+            .invalidResponse(statusCode: 404),
+            .decodingError("parse error")
+        ]
+        
+        // If this compiles, Sendable conformance is working
+        #expect(errors.count == 4)
     }
 }

@@ -11,25 +11,38 @@ import Foundation
 /// Use this for development when you don't have a valid API key
 actor MockLLMService: LLMServiceProtocol {
     
+    private var responseIndex = 0
+    
     func sendMessage(
         _ message: String,
         context: ConversationContext,
         history: [ChatMessage]
-    ) -> AsyncStream<String> {
+    ) -> AsyncStream<Result<String, LLMServiceError>> {
         AsyncStream { continuation in
             Task {
                 // Simulate network delay
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+                
+                // Check for cancellation
+                if Task.isCancelled {
+                    continuation.yield(.failure(.cancelled))
+                    continuation.finish()
+                    return
+                }
                 
                 let response = generateResponse(for: message, context: context)
                 
                 // Stream word by word
                 let words = response.split(separator: " ")
                 for (index, word) in words.enumerated() {
-                    if Task.isCancelled { break }
+                    if Task.isCancelled {
+                        continuation.yield(.failure(.cancelled))
+                        continuation.finish()
+                        return
+                    }
                     
                     let chunk = index == 0 ? String(word) : " " + word
-                    continuation.yield(chunk)
+                    continuation.yield(.success(chunk))
                     
                     // Small delay between words
                     try? await Task.sleep(nanoseconds: 50_000_000) // 0.05s
@@ -40,8 +53,8 @@ actor MockLLMService: LLMServiceProtocol {
         }
     }
     
-    func validateAPIKey() async throws -> Bool {
-        return true // Always valid
+    func validateAPIKey() async -> APIKeyValidationResult {
+        return .valid
     }
     
     // MARK: - Response Generation
@@ -123,15 +136,9 @@ actor MockLLMService: LLMServiceProtocol {
             "Portfolio management is a long-term journey. Stay diversified, keep costs low, and stick to your plan during market volatility."
         ]
         
-        return responses.randomElement() ?? responses[0]
-    }
-}
-
-// MARK: - Extension for easy use
-
-extension ChatViewModel {
-    /// Creates a ChatViewModel with mock LLM service for testing
-    static func mock(portfolio: Portfolio? = nil) -> ChatViewModel {
-        ChatViewModel(llmService: MockLLMService(), portfolio: portfolio)
+        // Use round-robin instead of random for predictable testing
+        let index = responseIndex % responses.count
+        responseIndex += 1
+        return responses[index]
     }
 }
