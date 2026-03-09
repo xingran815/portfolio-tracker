@@ -105,10 +105,10 @@ struct ThresholdBasedStrategy: RebalancingStrategy {
     }
     
     private func prioritizeOrders(_ orders: [RebalanceOrder]) -> [RebalanceOrder] {
-        orders.sorted { a, b in
-            if a.action == .sell && b.action == .buy { return true }
-            if a.action == .buy && b.action == .sell { return false }
-            return a.priority > b.priority
+        orders.sorted { lhs, rhs in
+            if lhs.action == .sell && rhs.action == .buy { return true }
+            if lhs.action == .buy && rhs.action == .sell { return false }
+            return lhs.priority > rhs.priority
         }
     }
 }
@@ -393,15 +393,12 @@ actor RebalancingEngine {
         
         // Track filtered orders (optimized from O(n²) to O(n) using Set)
         let orderSymbols = Set(orders.map { $0.symbol })
-        var filteredReasons: [FilteredOrderInfo] = []
-        for drift in analysis.significantDrifts {
-            if !orderSymbols.contains(drift.symbol) {
-                filteredReasons.append(FilteredOrderInfo(
-                    symbol: drift.symbol,
-                    reason: "Below minimum size or invalid"
-                ))
-            }
-        }
+        let filteredReasons: [FilteredOrderInfo] = analysis.significantDrifts
+            .filter { !orderSymbols.contains($0.symbol) }
+            .map { FilteredOrderInfo(
+                symbol: $0.symbol,
+                reason: "Below minimum size or invalid"
+            ) }
         
         guard !orders.isEmpty else {
             throw RebalancingError.allOrdersFiltered(filteredReasons)

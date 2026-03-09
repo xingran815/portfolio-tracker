@@ -621,10 +621,10 @@ private extension MDParser {
                 .replacingOccurrences(of: "股", with: "")
                 .trimmingCharacters(in: .whitespaces)
             
-            guard let s = Double(sharesClean), s > 0 else {
+            guard let sharesValue = Double(sharesClean), sharesValue > 0 else {
                 throw MDParserError.invalidNumericValue(field: "shares", value: sharesPart)
             }
-            shares = s
+            shares = sharesValue
             
             // Remove currency symbols
             let costClean = costPart
@@ -641,10 +641,10 @@ private extension MDParser {
                 .replacingOccurrences(of: "股", with: "")
                 .trimmingCharacters(in: .whitespaces)
             
-            guard let s = Double(sharesClean), s > 0 else {
+            guard let sharesValue = Double(sharesClean), sharesValue > 0 else {
                 throw MDParserError.invalidNumericValue(field: "shares", value: rest)
             }
-            shares = s
+            shares = sharesValue
         }
         
         // Infer market from symbol
