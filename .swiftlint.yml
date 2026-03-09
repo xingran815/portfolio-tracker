@@ -18,6 +18,7 @@ excluded:
   - build
   - "*.xcdatamodeld"
   - portfolio_tracker/Models/*+CoreData*.swift
+  - Scripts/
 
 line_length:
   warning: 120
