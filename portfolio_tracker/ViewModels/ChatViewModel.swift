@@ -22,26 +22,20 @@ final class ChatViewModel {
     var inputText = ""
     
     /// Whether AI is generating response
-    var isGenerating = false
-    
-    /// Streaming response text being built
-    var streamingResponse = ""
+    var isLoading = false
     
     /// Error message
     var errorMessage: String?
-    
-    /// Show error alert
-    var showError = false
     
     /// Whether to include portfolio context with messages
     var includePortfolioContext = true
     
     /// Current portfolio for context
-    var currentPortfolio: Portfolio?
+    private(set) var portfolio: Portfolio?
     
     /// Chat history persistence key
     private var chatHistoryKey: String {
-        if let portfolioId = currentPortfolio?.id?.uuidString {
+        if let portfolioId = portfolio?.id?.uuidString {
             return "chat_history_\(portfolioId)"
         }
         return "chat_history_global"
@@ -50,14 +44,20 @@ final class ChatViewModel {
     // MARK: - Dependencies
     
     private let llmService: any LLMServiceProtocol
+    private var currentTask: Task<Void, Never>?
+    private var currentAssistantMessageId: UUID?
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "ChatViewModel")
     
     // MARK: - Initialization
     
-    init(llmService: any LLMServiceProtocol = MockLLMService()) {
+    init(
+        llmService: any LLMServiceProtocol = MockLLMService(),
+        portfolio: Portfolio? = nil
+    ) {
         self.llmService = llmService
+        self.portfolio = portfolio
         loadChatHistory()
-        addSystemMessage()
+        addWelcomeMessageIfNeeded()
     }
     
     // MARK: - Public Methods
@@ -66,9 +66,9 @@ final class ChatViewModel {
     /// - Parameter portfolio: Portfolio to include in context
     func setPortfolio(_ portfolio: Portfolio?) {
         // Save current chat history if portfolio is changing
-        if currentPortfolio?.id != portfolio?.id {
+        if self.portfolio?.id != portfolio?.id {
             saveChatHistory()
-            currentPortfolio = portfolio
+            self.portfolio = portfolio
             loadChatHistory()
         }
     }
@@ -80,25 +80,33 @@ final class ChatViewModel {
         let userMessage = ChatMessage(role: .user, content: inputText)
         messages.append(userMessage)
         
-        let messageText = inputText
+        let messageToSend = inputText
         inputText = ""
-        isGenerating = true
-        streamingResponse = ""
+        isLoading = true
+        errorMessage = nil
+        currentAssistantMessageId = nil
         
-        let context = includePortfolioContext ? buildPortfolioContext() : ""
-        
-        Task {
-            await streamResponse(for: messageText, context: context)
+        currentTask = Task {
+            await streamResponse(to: messageToSend)
         }
     }
     
+    /// Cancels the current streaming request
+    func cancelStreaming() {
+        currentTask?.cancel()
+        isLoading = false
+    }
+    
     /// Clears chat history
-    func clearHistory() {
+    func clearConversation() {
+        cancelStreaming()
         messages.removeAll()
+        errorMessage = nil
+        currentAssistantMessageId = nil
         Task {
             await llmService.clearHistory()
         }
-        addSystemMessage()
+        addWelcomeMessageIfNeeded()
         saveChatHistory()
         logger.info("Cleared chat history")
     }
@@ -113,13 +121,12 @@ final class ChatViewModel {
             messages.remove(at: lastIndex)
         }
         
-        isGenerating = true
-        streamingResponse = ""
+        isLoading = true
+        errorMessage = nil
+        currentAssistantMessageId = nil
         
-        let context = includePortfolioContext ? buildPortfolioContext() : ""
-        
-        Task {
-            await streamResponse(for: lastUserMessage.content, context: context)
+        currentTask = Task {
+            await streamResponse(to: lastUserMessage.content)
         }
     }
     
@@ -128,6 +135,11 @@ final class ChatViewModel {
     func copyToClipboard(_ message: ChatMessage) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(message.content, forType: .string)
+    }
+    
+    /// Checks if LLM is configured
+    func isConfigured() async -> APIKeyValidationResult {
+        await llmService.validateAPIKey()
     }
     
     /// Saves chat history to UserDefaults
@@ -143,57 +155,102 @@ final class ChatViewModel {
     
     // MARK: - Private Methods
     
-    private func streamResponse(for text: String, context: String) async {
-        let stream = await llmService.sendMessage(text, context: context)
+    private func streamResponse(to message: String) async {
+        // Build context from portfolio
+        let context = includePortfolioContext ? buildContext() : ConversationContext(
+            portfolioName: nil,
+            positions: [],
+            riskProfile: nil,
+            targetAllocation: nil
+        )
         
-        do {
-            for try await result in stream {
-                switch result {
-                case .success(let chunk):
-                    streamingResponse += chunk
-                case .failure(let error):
-                    showError(message: error.localizedDescription)
-                    isGenerating = false
-                    return
-                }
+        // Create assistant message placeholder with unique ID
+        let assistantMessage = ChatMessage(role: .assistant, content: "")
+        let assistantId = assistantMessage.id
+        currentAssistantMessageId = assistantId
+        messages.append(assistantMessage)
+        
+        // Stream response
+        let stream = await llmService.sendMessage(
+            message,
+            context: context,
+            history: Array(messages.dropLast()) // Exclude current assistant message
+        )
+        
+        var fullResponse = ""
+        
+        for await result in stream {
+            // Check for cancellation
+            if Task.isCancelled {
+                break
             }
             
-            // Add completed message
-            let assistantMessage = ChatMessage(role: .assistant, content: streamingResponse)
-            messages.append(assistantMessage)
-            streamingResponse = ""
-            isGenerating = false
-            
-            // Save history after each complete exchange
-            saveChatHistory()
-            
-        } catch {
-            showError(message: error.localizedDescription)
-            isGenerating = false
+            switch result {
+            case .success(let chunk):
+                fullResponse += chunk
+                updateAssistantMessage(id: assistantId, content: fullResponse)
+                
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+                logger.error("Streaming error: \(error.localizedDescription)")
+                // Remove the empty assistant message on error
+                removeMessage(id: assistantId)
+                currentAssistantMessageId = nil
+                isLoading = false
+                return
+            }
         }
+        
+        logger.info("Received response: \(fullResponse.prefix(100))...")
+        currentAssistantMessageId = nil
+        isLoading = false
+        
+        // Save history after each complete exchange
+        saveChatHistory()
+    }
+    
+    /// Safely updates assistant message by ID (prevents race conditions)
+    private func updateAssistantMessage(id: UUID, content: String) {
+        // Only update if this is still the current assistant message
+        guard currentAssistantMessageId == id else { return }
+        
+        if let index = messages.firstIndex(where: { $0.id == id }) {
+            messages[index] = ChatMessage(
+                id: id,
+                role: .assistant,
+                content: content
+            )
+        }
+    }
+    
+    /// Removes a message by ID
+    private func removeMessage(id: UUID) {
+        messages.removeAll { $0.id == id }
     }
     
     private func loadChatHistory() {
         guard let data = UserDefaults.standard.data(forKey: chatHistoryKey) else {
             messages = []
-            addSystemMessage()
+            addWelcomeMessageIfNeeded()
             return
         }
         
         do {
             messages = try JSONDecoder().decode([ChatMessage].self, from: data)
             if messages.isEmpty {
-                addSystemMessage()
+                addWelcomeMessageIfNeeded()
             }
             logger.debug("Loaded chat history for \(self.chatHistoryKey)")
         } catch {
             logger.error("Failed to load chat history: \(error.localizedDescription)")
             messages = []
-            addSystemMessage()
+            addWelcomeMessageIfNeeded()
         }
     }
     
-    private func addSystemMessage() {
+    private func addWelcomeMessageIfNeeded() {
+        guard messages.isEmpty else { return }
+        
         let welcomeMessage = ChatMessage(
             role: .assistant,
             content: "Hello! I'm your AI portfolio assistant. I can help you analyze your portfolio, suggest rebalancing strategies, and answer investment questions.\n\nHow can I help you today?"
@@ -201,42 +258,31 @@ final class ChatViewModel {
         messages.append(welcomeMessage)
     }
     
-    private func buildPortfolioContext() -> String {
-        guard let portfolio = currentPortfolio else {
-            return "No portfolio selected."
+    private func buildContext() -> ConversationContext {
+        guard let portfolio = portfolio else {
+            return ConversationContext(
+                portfolioName: nil,
+                positions: [],
+                riskProfile: nil,
+                targetAllocation: nil
+            )
         }
         
-        var context = "Portfolio: \(portfolio.name ?? "Unnamed")\n"
-        context += "Total Value: $\(String(format: "%.2f", portfolio.totalValue))\n"
-        context += "Risk Profile: \(portfolio.riskProfile.displayName)\n"
-        context += "Expected Return: \(String(format: "%.1f", portfolio.expectedReturn * 100))%\n"
-        context += "Max Drawdown: \(String(format: "%.1f", portfolio.maxDrawdown * 100))%\n"
-        context += "Rebalancing Frequency: \(portfolio.rebalancingFrequency.displayName)\n\n"
-        
+        // Get positions from NSSet
         let positionSet = portfolio.positions as? Set<Position> ?? []
-        if !positionSet.isEmpty {
-            context += "Current Positions:\n"
-            for position in positionSet.sorted(by: { ($0.currentValue ?? 0) > ($1.currentValue ?? 0) }) {
-                let symbol = position.symbol ?? "Unknown"
-                let value = position.currentValue ?? 0
-                let weight = portfolio.totalValue > 0 ? value / portfolio.totalValue : 0
-                context += "- \(symbol): \(String(format: "%.0f", position.shares)) shares, $\(String(format: "%.2f", value)) (\(String(format: "%.1f", weight * 100))%)\n"
-            }
-            
-            let targetAllocation = portfolio.targetAllocation
-            if !targetAllocation.isEmpty {
-                context += "\nTarget Allocation:\n"
-                for (symbol, weight) in targetAllocation.sorted(by: { $0.key < $1.key }) {
-                    context += "- \(symbol): \(String(format: "%.1f", weight * 100))%\n"
-                }
-            }
+        let positions = positionSet.map { position -> ConversationContext.PositionSummary in
+            ConversationContext.PositionSummary(
+                symbol: position.symbol ?? "Unknown",
+                shares: position.shares,
+                currentValue: position.currentPrice * position.shares
+            )
         }
         
-        return context
-    }
-    
-    private func showError(message: String) {
-        errorMessage = message
-        showError = true
+        return ConversationContext(
+            portfolioName: portfolio.name,
+            positions: positions,
+            riskProfile: portfolio.riskProfile.displayName,
+            targetAllocation: portfolio.targetAllocation
+        )
     }
 }

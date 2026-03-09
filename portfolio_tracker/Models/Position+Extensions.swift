@@ -8,6 +8,10 @@
 import CoreData
 import Foundation
 
+// MARK: - PositionProtocol Conformance
+
+extension Position: PositionProtocol {}
+
 // MARK: - Position Entity Extension
 extension Position {
     
@@ -50,8 +54,8 @@ extension Position {
     
     /// Profit/loss percentage
     public var profitLossPercentage: Double? {
-        guard totalCost > 0, let pl = profitLoss else { return nil }
-        return pl / totalCost
+        guard totalCost > 0, let profit = profitLoss else { return nil }
+        return profit / totalCost
     }
     
     /// Weight in portfolio (if assigned to portfolio)
