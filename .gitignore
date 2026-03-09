@@ -1,0 +1,75 @@
+# Xcode
+# User data
+*.xcuserdata
+*.xcuserstate
+*.xcuserdatad
+project.xcworkspace/xcuserdata/
+*.xccheckout
+*.moved-aside
+*.xcscmblueprint
+*.xcscheme
+
+# Build generated
+build/
+DerivedData/
+*.build/
+*.app
+dSYM.zip
+dSYM/
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+.build/
+Package.resolved
+.swiftpm/
+
+# CocoaPods
+Pods/
+*.xcworkspace
+!default.xcworkspace
+
+# Carthage
+Carthage/Build/
+Carthage/Checkouts/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code Injection
+injected_bundle.swift
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# App specific - exclude API keys
+*.xcconfig
+config.plist
+Secrets.swift
+
+# Planning docs (keep at parent level only)
+../AGENTS.md
+../PROGRAMMING_PLAN.md
+../RESEARCH_REPORT.md
+../CODING.md
