@@ -300,7 +300,8 @@ actor KimiService: LLMServiceProtocol {
 enum SystemPrompts {
     /// Generates system prompt for portfolio advisor
     static func portfolioAdvisor(context: ConversationContext) -> String {
-        var prompt = """You are a professional investment advisor specializing in portfolio management and rebalancing strategies.
+        var prompt = """
+You are a professional investment advisor specializing in portfolio management and rebalancing strategies.
 
 Your role:
 1. Analyze the user's portfolio and provide actionable advice

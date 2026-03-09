@@ -87,14 +87,14 @@ protocol LLMServiceProtocol: Sendable {
     ///   - context: Portfolio context for personalized responses
     ///   - history: Previous conversation history
     /// - Returns: AsyncStream of response chunks
-    func sendMessage(
+    @Sendable func sendMessage(
         _ message: String,
         context: ConversationContext,
         history: [ChatMessage]
     ) -> AsyncStream<String>
     
     /// Validates the API key by making a test request
-    func validateAPIKey() async throws -> Bool
+    @Sendable func validateAPIKey() async throws -> Bool
 }
 
 /// Configuration for LLM requests

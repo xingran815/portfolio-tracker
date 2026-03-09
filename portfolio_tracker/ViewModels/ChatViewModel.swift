@@ -150,10 +150,3 @@ final class ChatViewModel {
     }
 }
 
-// MARK: - Position Value Helper
-
-private extension Position {
-    var currentValue: Double {
-        return shares * currentPrice
-    }
-}
