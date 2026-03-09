@@ -6,7 +6,24 @@
 //
 
 import Foundation
+import CoreData
 import os.log
+
+// MARK: - Financial Constants
+
+/// Constants for financial calculations
+enum FinancialConstants {
+    /// Minimum position value to consider (avoids micro-positions)
+    static let minPositionValue: Decimal = Decimal(string: "0.01")!
+    
+    /// Allocation tolerance for normalization (0.01 = 1%)
+    static let allocationTolerance: Decimal = Decimal(string: "0.0001")!
+    
+    /// Default epsilon for Double comparisons
+    static let doubleEpsilon: Double = 0.0001
+}
+
+// MARK: - Configuration
 
 /// Configuration for rebalancing engine
 struct RebalancingConfiguration: Sendable {
@@ -25,8 +42,11 @@ struct RebalancingConfiguration: Sendable {
     /// Cash buffer to maintain (percentage of portfolio)
     let cashBuffer: Double
     
+    /// Maximum age of price data (seconds)
+    let maxPriceAge: TimeInterval
+    
     /// Strategy for order generation
-    let strategy: RebalancingStrategy
+    let strategy: any RebalancingStrategy
     
     static let `default` = RebalancingConfiguration(
         driftThreshold: 0.05,
@@ -34,136 +54,361 @@ struct RebalancingConfiguration: Sendable {
         minimumOrderSize: 100.0,
         maximumOrderSize: nil,
         cashBuffer: 0.02,
-        strategy: .thresholdBased
+        maxPriceAge: 300,  // 5 minutes
+        strategy: ThresholdBasedStrategy()
     )
 }
 
-/// Rebalancing strategy type
-enum RebalancingStrategy: String, Sendable {
-    /// Simple threshold-based rebalancing
-    case thresholdBased
-    
-    /// Cash-flow aware (minimize transactions)
-    case cashFlowAware
-    
-    /// Tax-optimized (harvest losses first)
-    case taxOptimized
+// MARK: - Strategy Protocol
+
+/// Protocol for rebalancing strategies
+protocol RebalancingStrategy: Sendable {
+    /// Generates orders based on the strategy
+    /// - Parameters:
+    ///   - analysis: Drift analysis
+    ///   - snapshot: Portfolio snapshot
+    ///   - availableCash: Available cash for trading
+    ///   - config: Engine configuration
+    /// - Returns: Array of orders
+    func generateOrders(
+        analysis: DriftAnalysis,
+        snapshot: PortfolioSnapshot,
+        availableCash: Double,
+        config: RebalancingConfiguration
+    ) -> [RebalanceOrder]
 }
 
-/// Errors that can occur during rebalancing
-enum RebalancingError: LocalizedError, Sendable {
-    case noDriftAnalysis
-    case insufficientCash(required: Double, available: Double)
-    case invalidConfiguration(String)
-    case generationFailed(String)
+// MARK: - Strategy Implementations
+
+/// Threshold-based rebalancing strategy
+struct ThresholdBasedStrategy: RebalancingStrategy {
+    func generateOrders(
+        analysis: DriftAnalysis,
+        snapshot: PortfolioSnapshot,
+        availableCash: Double,
+        config: RebalancingConfiguration
+    ) -> [RebalanceOrder] {
+        var orders: [RebalanceOrder] = []
+        
+        for drift in analysis.significantDrifts {
+            if let order = OrderFactory.createOrder(
+                for: drift,
+                snapshot: snapshot,
+                config: config
+            ) {
+                orders.append(order)
+            }
+        }
+        
+        return prioritizeOrders(orders)
+    }
     
-    var errorDescription: String? {
-        switch self {
-        case .noDriftAnalysis:
-            return "No drift analysis available"
-        case .insufficientCash(let required, let available):
-            return "Insufficient cash: need $\(String(format: "%.2f", required)), have $\(String(format: "%.2f", available))"
-        case .invalidConfiguration(let message):
-            return "Invalid configuration: \(message)"
-        case .generationFailed(let message):
-            return "Failed to generate plan: \(message)"
+    private func prioritizeOrders(_ orders: [RebalanceOrder]) -> [RebalanceOrder] {
+        orders.sorted { a, b in
+            if a.action == .sell && b.action == .buy { return true }
+            if a.action == .buy && b.action == .sell { return false }
+            return a.priority > b.priority
         }
     }
 }
 
+/// Cash-flow aware strategy (minimizes transactions)
+struct CashFlowAwareStrategy: RebalancingStrategy {
+    func generateOrders(
+        analysis: DriftAnalysis,
+        snapshot: PortfolioSnapshot,
+        availableCash: Double,
+        config: RebalancingConfiguration
+    ) -> [RebalanceOrder] {
+        var orders: [RebalanceOrder] = []
+        var remainingCash = availableCash
+        
+        // First, generate sell orders (generates cash)
+        for drift in analysis.significantDrifts where drift.isOverweight {
+            if let order = OrderFactory.createOrder(
+                for: drift,
+                snapshot: snapshot,
+                config: config
+            ) {
+                orders.append(order)
+                remainingCash += order.estimatedAmount
+            }
+        }
+        
+        // Then, generate buy orders within cash limit
+        for drift in analysis.significantDrifts where drift.isUnderweight {
+            if let order = OrderFactory.createOrder(
+                for: drift,
+                snapshot: snapshot,
+                config: config
+            ) {
+                if order.estimatedAmount <= remainingCash {
+                    orders.append(order)
+                    remainingCash -= order.estimatedAmount
+                }
+            }
+        }
+        
+        return orders
+    }
+}
+
+/// Tax-optimized strategy (harvests losses first)
+struct TaxOptimizedStrategy: RebalancingStrategy {
+    func generateOrders(
+        analysis: DriftAnalysis,
+        snapshot: PortfolioSnapshot,
+        availableCash: Double,
+        config: RebalancingConfiguration
+    ) -> [RebalanceOrder] {
+        var orders: [RebalanceOrder] = []
+        
+        // First priority: Sell positions with losses
+        for drift in analysis.significantDrifts where drift.isOverweight {
+            let position = snapshot.position(for: drift.symbol)
+            let hasLoss = (position?.profitLoss ?? 0) < 0
+            
+            if let order = OrderFactory.createOrder(
+                for: drift,
+                snapshot: snapshot,
+                config: config
+            ) {
+                orders.append(hasLoss ? order.withHighPriority() : order)
+            }
+        }
+        
+        // Second priority: Buy underweight positions
+        for drift in analysis.significantDrifts where drift.isUnderweight {
+            if let order = OrderFactory.createOrder(
+                for: drift,
+                snapshot: snapshot,
+                config: config
+            ) {
+                orders.append(order)
+            }
+        }
+        
+        return orders.sorted { $0.priority > $1.priority }
+    }
+}
+
+// MARK: - Order Factory
+
+/// Factory for creating validated orders
+enum OrderFactory {
+    
+    static func createOrder(
+        for drift: PositionDrift,
+        snapshot: PortfolioSnapshot,
+        config: RebalancingConfiguration
+    ) -> RebalanceOrder? {
+        let symbol = drift.symbol
+        let action: OrderAction = drift.isOverweight ? .sell : .buy
+        
+        // Get position and price
+        let position = snapshot.position(for: symbol)
+        let currentPrice = position?.currentPrice ?? 0
+        
+        // Validate price
+        guard currentPrice > 0 else {
+            return nil
+        }
+        
+        // Check price freshness if available
+        if let lastUpdated = position?.lastUpdated,
+           Date().timeIntervalSince(lastUpdated) > config.maxPriceAge {
+            // Price is stale - could return nil or log warning
+            // For now, continue but with lower priority
+        }
+        
+        // Calculate adjustment value
+        guard let adjustmentValue = calculateAdjustmentValue(drift: drift) else {
+            return nil
+        }
+        
+        // Apply minimum order size
+        guard adjustmentValue >= config.minimumOrderSize else {
+            return nil
+        }
+        
+        // Calculate shares
+        var shares = adjustmentValue / currentPrice
+        
+        // Apply maximum order size if configured
+        if let maxSize = config.maximumOrderSize, adjustmentValue > maxSize {
+            shares = maxSize / currentPrice
+        }
+        
+        // Validate sell orders have sufficient shares
+        if action == .sell {
+            let availableShares = position?.shares ?? 0
+            shares = min(shares, availableShares)
+            
+            guard shares > 0 else {
+                return nil
+            }
+        }
+        
+        // Generate reason
+        let reason = generateReason(for: drift)
+        let priority = determinePriority(for: drift)
+        
+        return RebalanceOrder(
+            symbol: symbol,
+            action: action,
+            shares: shares,
+            estimatedPrice: currentPrice,
+            priority: priority,
+            reason: reason
+        )
+    }
+    
+    private static func calculateAdjustmentValue(drift: PositionDrift) -> Double? {
+        // Handle edge case where currentWeight is 0
+        guard drift.currentWeight > FinancialConstants.doubleEpsilon else {
+            // Position doesn't exist yet, calculate based on drift
+            guard abs(drift.drift) > FinancialConstants.doubleEpsilon else { return nil }
+            return abs(drift.drift) * 100000  // Use a default portfolio value estimate
+        }
+        
+        guard let adjValue = drift.adjustmentValue else { return nil }
+        return abs(adjValue)
+    }
+    
+    private static func generateReason(for drift: PositionDrift) -> String {
+        let driftPct = Int(drift.absoluteDrift * 100)
+        let currentPct = Int(drift.currentWeight * 100)
+        let targetPct = Int(drift.targetWeight * 100)
+        let direction = drift.isOverweight ? "Over" : "Under"
+        return "\(direction) by \(driftPct)% (current \(currentPct)%, target \(targetPct)%)"
+    }
+    
+    private static func determinePriority(for drift: PositionDrift) -> OrderPriority {
+        let driftPct = drift.absoluteDrift
+        if driftPct > 0.10 { return .high }
+        if driftPct > 0.05 { return .medium }
+        return .low
+    }
+}
+
+// MARK: - Errors
+
+enum RebalancingError: LocalizedError, Sendable {
+    case invalidSnapshot([String])
+    case insufficientCash(required: Double, available: Double)
+    case generationFailed(String)
+    case noSignificantDrift
+    case allOrdersFiltered([FilteredOrderInfo])
+    
+    var recoverySuggestion: String? {
+        switch self {
+        case .invalidSnapshot:
+            return "Check portfolio has positions and target allocation"
+        case .insufficientCash:
+            return "Add cash or reduce buy orders"
+        case .noSignificantDrift:
+            return "No action needed at this time"
+        case .allOrdersFiltered:
+            return "Check minimum order size settings"
+        default:
+            return nil
+        }
+    }
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidSnapshot(let errors):
+            return "Invalid portfolio: \(errors.joined(separator: ", "))"
+        case .insufficientCash(let required, let available):
+            return "Need $\(String(format: "%.2f", required)), have $\(String(format: "%.2f", available))"
+        case .generationFailed(let message):
+            return "Failed: \(message)"
+        case .noSignificantDrift:
+            return "No positions exceed drift threshold"
+        case .allOrdersFiltered(let reasons):
+            let reasonStrings = reasons.map { "\($0.symbol): \($0.reason)" }
+            return "Orders filtered: \(reasonStrings.joined(separator: "; "))"
+        }
+    }
+}
+
+// MARK: - Engine
+
 /// Main rebalancing engine
 actor RebalancingEngine {
-    
-    // MARK: - Properties
     
     private let configuration: RebalancingConfiguration
     private let driftAnalyzer: DriftAnalyzer
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "RebalancingEngine")
     
-    // MARK: - Initialization
-    
-    /// Creates a rebalancing engine
-    /// - Parameter configuration: Engine configuration
     init(configuration: RebalancingConfiguration = .default) {
         self.configuration = configuration
         self.driftAnalyzer = DriftAnalyzer(threshold: configuration.driftThreshold)
     }
     
-    // MARK: - Public Methods
-    
-    /// Generates a rebalance plan for a portfolio
+    /// Generates a rebalance plan from a portfolio snapshot
     /// - Parameters:
-    ///   - portfolio: Portfolio to rebalance
+    ///   - snapshot: Portfolio snapshot (created on MainActor)
     ///   - availableCash: Cash available for trading
-    /// - Returns: Rebalance plan
+    /// - Returns: Rebalance plan with orders and metadata
     /// - Throws: RebalancingError if plan cannot be generated
     func generatePlan(
-        for portfolio: Portfolio,
+        from snapshot: PortfolioSnapshot,
         availableCash: Double
     ) throws -> RebalancePlan {
-        // Get positions
-        let positionSet = portfolio.positions as? Set<Position> ?? []
-        let positions = Array(positionSet)
-        
-        // Get target allocation
-        let targetAllocation = portfolio.targetAllocation
-        guard !targetAllocation.isEmpty else {
-            throw RebalancingError.invalidConfiguration("No target allocation set")
-        }
-        
-        // Get total value
-        let totalValue = portfolio.totalValue
-        guard totalValue > 0 else {
-            throw RebalancingError.invalidConfiguration("Portfolio has no value")
+        // Validate snapshot
+        guard snapshot.isValid else {
+            throw RebalancingError.invalidSnapshot(snapshot.validationErrors)
         }
         
         // Analyze drift
-        let driftAnalysis = try driftAnalyzer.analyze(
-            positions: positions,
-            targetAllocation: targetAllocation,
-            totalValue: totalValue
+        let analysis = try driftAnalyzer.analyze(
+            positions: snapshot.positions.map { $0.asPosition() },
+            targetAllocation: snapshot.targetAllocation,
+            totalValue: snapshot.totalValue
         )
         
-        logger.info("Generating rebalance plan for \(portfolio.name ?? "Portfolio")")
-        logger.info("Total drift: \(driftAnalysis.totalDrift)")
+        logger.info("Analyzing \(snapshot.name ?? "Portfolio"): \(analysis.totalDrift) drift")
         
-        // Generate orders based on strategy
-        let orders: [RebalanceOrder]
-        switch configuration.strategy {
-        case .thresholdBased:
-            orders = try generateThresholdBasedOrders(
-                analysis: driftAnalysis,
-                positions: positions,
-                totalValue: totalValue
-            )
-        case .cashFlowAware:
-            orders = try generateCashFlowAwareOrders(
-                analysis: driftAnalysis,
-                positions: positions,
-                availableCash: availableCash,
-                totalValue: totalValue
-            )
-        case .taxOptimized:
-            orders = try generateTaxOptimizedOrders(
-                analysis: driftAnalysis,
-                positions: positions,
-                totalValue: totalValue
-            )
+        // Check if rebalancing is needed
+        guard analysis.needsRebalancing else {
+            throw RebalancingError.noSignificantDrift
         }
         
-        // Validate orders
+        // Generate orders using strategy
+        let orders = configuration.strategy.generateOrders(
+            analysis: analysis,
+            snapshot: snapshot,
+            availableCash: availableCash,
+            config: configuration
+        )
+        
+        // Track filtered orders
+        var filteredReasons: [FilteredOrderInfo] = []
+        for drift in analysis.significantDrifts {
+            let hasOrder = orders.contains { $0.symbol == drift.symbol }
+            if !hasOrder {
+                filteredReasons.append(FilteredOrderInfo(
+                    symbol: drift.symbol,
+                    reason: "Below minimum size or invalid"
+                ))
+            }
+        }
+        
         guard !orders.isEmpty else {
-            throw RebalancingError.generationFailed("No orders generated")
+            throw RebalancingError.allOrdersFiltered(filteredReasons)
         }
         
-        // Check cash requirements
+        // Create plan
         let plan = RebalancePlan(
-            portfolioId: portfolio.id,
-            portfolioName: portfolio.name,
+            portfolioId: snapshot.id,
+            portfolioName: snapshot.name,
             orders: orders,
-            driftAnalysis: driftAnalysis
+            driftAnalysis: analysis,
+            filteredReasons: filteredReasons.isEmpty ? nil : filteredReasons
         )
         
+        // Validate cash requirements
         guard plan.canExecute(with: availableCash) else {
             throw RebalancingError.insufficientCash(
                 required: plan.netCashNeeded,
@@ -175,31 +420,18 @@ actor RebalancingEngine {
         return plan
     }
     
-    /// Quick check if portfolio needs rebalancing
-    /// - Parameter portfolio: Portfolio to check
-    /// - Returns: True if rebalancing is recommended
-    func needsRebalancing(_ portfolio: Portfolio) -> Bool {
-        let positionSet = portfolio.positions as? Set<Position> ?? []
-        let positions = Array(positionSet)
-        let targetAllocation = portfolio.targetAllocation
-        let totalValue = portfolio.totalValue
-        
-        guard !targetAllocation.isEmpty, totalValue > 0 else {
-            return false
-        }
+    /// Quick check if rebalancing is needed
+    func needsRebalancing(_ snapshot: PortfolioSnapshot) -> Bool {
+        guard snapshot.isValid else { return false }
         
         return driftAnalyzer.needsRebalancing(
-            positions: positions,
-            targetAllocation: targetAllocation,
-            totalValue: totalValue
+            positions: snapshot.positions.map { $0.asPosition() },
+            targetAllocation: snapshot.targetAllocation,
+            totalValue: snapshot.totalValue
         )
     }
     
     /// Calculates next scheduled rebalancing date
-    /// - Parameters:
-    ///   - lastRebalanceDate: Date of last rebalance (nil if never)
-    ///   - frequency: Rebalancing frequency
-    /// - Returns: Next recommended date
     func nextRebalancingDate(
         lastRebalanceDate: Date?,
         frequency: RebalancingFrequency
@@ -216,249 +448,27 @@ actor RebalancingEngine {
     }
     
     /// Checks if rebalancing is overdue
-    /// - Parameters:
-    ///   - lastRebalanceDate: Date of last rebalance
-    ///   - frequency: Rebalancing frequency
-    /// - Returns: True if overdue
     func isRebalancingOverdue(
         lastRebalanceDate: Date?,
         frequency: RebalancingFrequency
     ) -> Bool {
-        guard let lastDate = lastRebalanceDate else {
-            return true  // Never rebalanced = overdue
-        }
-        
-        let nextDate = nextRebalancingDate(
-            lastRebalanceDate: lastDate,
-            frequency: frequency
-        )
-        
+        guard let lastDate = lastRebalanceDate else { return true }
+        let nextDate = nextRebalancingDate(lastRebalanceDate: lastDate, frequency: frequency)
         return Date() > nextDate
     }
 }
 
-// MARK: - Order Generation Strategies
+// MARK: - Helper Extensions
 
-private extension RebalancingEngine {
-    
-    /// Generates orders based on drift threshold
-    func generateThresholdBasedOrders(
-        analysis: DriftAnalysis,
-        positions: [Position],
-        totalValue: Double
-    ) throws -> [RebalanceOrder] {
-        var orders: [RebalanceOrder] = []
-        
-        // Process significant drifts
-        for drift in analysis.significantDrifts {
-            let order = try createOrder(
-                for: drift,
-                positions: positions,
-                totalValue: totalValue
-            )
-            
-            if let order = order {
-                orders.append(order)
-            }
-        }
-        
-        return prioritizeOrders(orders)
-    }
-    
-    /// Generates orders that work with available cash
-    func generateCashFlowAwareOrders(
-        analysis: DriftAnalysis,
-        positions: [Position],
-        availableCash: Double,
-        totalValue: Double
-    ) throws -> [RebalanceOrder] {
-        var orders: [RebalanceOrder] = []
-        var remainingCash = availableCash
-        
-        // First, generate sell orders (generates cash)
-        for drift in analysis.significantDrifts where drift.isOverweight {
-            if let order = try createOrder(
-                for: drift,
-                positions: positions,
-                totalValue: totalValue
-            ) {
-                orders.append(order)
-                remainingCash += order.estimatedAmount
-            }
-        }
-        
-        // Then, generate buy orders within cash limit
-        for drift in analysis.significantDrifts where drift.isUnderweight {
-            if let order = try createOrder(
-                for: drift,
-                positions: positions,
-                totalValue: totalValue
-            ) {
-                if order.estimatedAmount <= remainingCash {
-                    orders.append(order)
-                    remainingCash -= order.estimatedAmount
-                }
-            }
-        }
-        
-        return orders
-    }
-    
-    /// Generates tax-optimized orders (harvest losses first)
-    func generateTaxOptimizedOrders(
-        analysis: DriftAnalysis,
-        positions: [Position],
-        totalValue: Double
-    ) throws -> [RebalanceOrder] {
-        var orders: [RebalanceOrder] = []
-        
-        // First priority: Sell positions with losses (tax loss harvesting)
-        for drift in analysis.significantDrifts where drift.isOverweight {
-            let position = positions.first { $0.symbol == drift.symbol }
-            let hasLoss = (position?.profitLoss ?? 0) < 0
-            
-            if let order = try createOrder(
-                for: drift,
-                positions: positions,
-                totalValue: totalValue
-            ) {
-                // Prioritize positions with losses
-                let prioritizedOrder = hasLoss
-                    ? order.withHighPriority()
-                    : order
-                orders.append(prioritizedOrder)
-            }
-        }
-        
-        // Second priority: Buy underweight positions
-        for drift in analysis.significantDrifts where drift.isUnderweight {
-            if let order = try createOrder(
-                for: drift,
-                positions: positions,
-                totalValue: totalValue
-            ) {
-                orders.append(order)
-            }
-        }
-        
-        return orders.sorted { $0.priority > $1.priority }
-    }
-    
-    /// Creates a single order from drift info
-    func createOrder(
-        for drift: PositionDrift,
-        positions: [Position],
-        totalValue: Double
-    ) throws -> RebalanceOrder? {
-        let symbol = drift.symbol
-        
-        // Determine action
-        let action: OrderAction = drift.isOverweight ? .sell : .buy
-        
-        // Get current position
-        let position = positions.first { $0.symbol == symbol }
-        let currentPrice = position?.currentPrice ?? drift.currentValue / max(drift.currentWeight, 0.0001)
-        
-        guard currentPrice > 0 else {
-            return nil
-        }
-        
-        // Calculate shares to trade
-        let adjustmentValue = abs(drift.adjustmentValue)
-        let targetShares = adjustmentValue / currentPrice
-        
-        // Apply minimum order size
-        guard adjustmentValue >= configuration.minimumOrderSize else {
-            logger.debug("Order for \(symbol) below minimum size: $\(adjustmentValue)")
-            return nil
-        }
-        
-        // Apply maximum order size if configured
-        var shares = targetShares
-        if let maxSize = configuration.maximumOrderSize, adjustmentValue > maxSize {
-            shares = maxSize / currentPrice
-            logger.info("Order for \(symbol) capped at max size")
-        }
-        
-        // Validate sell orders have sufficient shares
-        if action == .sell {
-            let availableShares = position?.shares ?? 0
-            shares = min(shares, availableShares)
-            
-            guard shares > 0 else {
-                logger.warning("Insufficient shares to sell \(symbol)")
-                return nil
-            }
-        }
-        
-        // Generate reason
-        let reason = generateReason(for: drift)
-        
-        return RebalanceOrder(
-            symbol: symbol,
-            action: action,
-            shares: shares,
-            estimatedPrice: currentPrice,
-            priority: determinePriority(for: drift),
-            reason: reason
-        )
-    }
-    
-    /// Generates human-readable reason for order
-    func generateReason(for drift: PositionDrift) -> String {
-        let driftPct = Int(drift.absoluteDrift * 100)
-        let currentPct = Int(drift.currentWeight * 100)
-        let targetPct = Int(drift.targetWeight * 100)
-        
-        if drift.isOverweight {
-            return "Overweight by \(driftPct)% (current \(currentPct)%, target \(targetPct)%)"
-        } else {
-            return "Underweight by \(driftPct)% (current \(currentPct)%, target \(targetPct)%)"
-        }
-    }
-    
-    /// Determines order priority
-    func determinePriority(for drift: PositionDrift) -> OrderPriority {
-        let driftPct = drift.absoluteDrift
-        
-        if driftPct > 0.10 {
-            return .high
-        } else if driftPct > 0.05 {
-            return .medium
-        } else {
-            return .low
-        }
-    }
-    
-    /// Prioritizes orders (sells first, then by drift magnitude)
-    func prioritizeOrders(_ orders: [RebalanceOrder]) -> [RebalanceOrder] {
-        orders.sorted { a, b in
-            // Sell orders first
-            if a.action == .sell && b.action == .buy {
-                return true
-            }
-            if a.action == .buy && b.action == .sell {
-                return false
-            }
-            // Then by priority
-            return a.priority > b.priority
-        }
-    }
-}
-
-// MARK: - Convenience Extensions
-
-extension RebalancingEngine {
-    
-    /// Generates a simple rebalance plan with default settings
-    /// - Parameters:
-    ///   - portfolio: Portfolio to rebalance (accessed from MainActor)
-    ///   - totalValue: Total portfolio value
-    /// - Returns: Rebalance plan
-    func generateSimplePlan(
-        for portfolio: Portfolio,
-        totalValue: Double
-    ) async throws -> RebalancePlan {
-        try generatePlan(for: portfolio, availableCash: totalValue)
+private extension PositionSnapshot {
+    /// Converts snapshot back to Position-like struct for DriftAnalyzer
+    func asPosition() -> Position {
+        // Create a minimal Position for analysis
+        // This is a workaround since DriftAnalyzer expects CoreData Position
+        let position = Position()
+        position.symbol = symbol
+        position.shares = shares
+        position.currentPrice = currentPrice
+        return position
     }
 }

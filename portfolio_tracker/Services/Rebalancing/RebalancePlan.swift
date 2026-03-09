@@ -7,7 +7,8 @@
 
 import Foundation
 
-/// Action type for rebalance orders
+// MARK: - Order Types
+
 enum OrderAction: String, Sendable, CaseIterable {
     case buy
     case sell
@@ -18,16 +19,8 @@ enum OrderAction: String, Sendable, CaseIterable {
         case .sell: return "Sell"
         }
     }
-    
-    var sign: Double {
-        switch self {
-        case .buy: return 1
-        case .sell: return -1
-        }
-    }
 }
 
-/// Priority level for order execution
 enum OrderPriority: Int, Sendable, Comparable {
     case high = 3
     case medium = 2
@@ -36,9 +29,18 @@ enum OrderPriority: Int, Sendable, Comparable {
     static func < (lhs: OrderPriority, rhs: OrderPriority) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
+    
+    var displayName: String {
+        switch self {
+        case .high: return "High"
+        case .medium: return "Medium"
+        case .low: return "Low"
+        }
+    }
 }
 
-/// Individual rebalance order
+// MARK: - Order
+
 struct RebalanceOrder: Identifiable, Sendable {
     let id: UUID
     let symbol: String
@@ -70,233 +72,7 @@ struct RebalanceOrder: Identifiable, Sendable {
         self.reason = reason
         self.notes = notes
     }
-}
-
-/// Complete rebalance plan
-struct RebalancePlan: Identifiable, Sendable {
-    let id: UUID
-    let portfolioId: UUID?
-    let portfolioName: String?
-    let createdAt: Date
-    let status: PlanStatus
     
-    /// Orders to execute
-    let orders: [RebalanceOrder]
-    
-    /// Analysis that generated this plan
-    let driftAnalysis: DriftAnalysis?
-    
-    /// Total buy amount
-    let totalBuyAmount: Double
-    
-    /// Total sell amount
-    let totalSellAmount: Double
-    
-    /// Net cash needed (negative = cash generated)
-    var netCashNeeded: Double {
-        totalBuyAmount - totalSellAmount
-    }
-    
-    /// Estimated tax impact (if available)
-    let estimatedTaxImpact: Double?
-    
-    /// Notes about the plan
-    let notes: String?
-    
-    init(
-        id: UUID = UUID(),
-        portfolioId: UUID? = nil,
-        portfolioName: String? = nil,
-        createdAt: Date = Date(),
-        status: PlanStatus = .draft,
-        orders: [RebalanceOrder],
-        driftAnalysis: DriftAnalysis? = nil,
-        estimatedTaxImpact: Double? = nil,
-        notes: String? = nil
-    ) {
-        self.id = id
-        self.portfolioId = portfolioId
-        self.portfolioName = portfolioName
-        self.createdAt = createdAt
-        self.status = status
-        self.orders = orders
-        self.driftAnalysis = driftAnalysis
-        self.totalBuyAmount = orders.filter { $0.action == .buy }.reduce(0) { $0 + $1.estimatedAmount }
-        self.totalSellAmount = orders.filter { $0.action == .sell }.reduce(0) { $0 + $1.estimatedAmount }
-        self.estimatedTaxImpact = estimatedTaxImpact
-        self.notes = notes
-    }
-}
-
-/// Strategy for order execution
-enum ExecutionStrategy: String, Sendable, CaseIterable {
-    /// Execute all orders at once
-    case immediate
-    
-    /// Execute in batches by priority
-    case byPriority
-    
-    /// Execute sells first, then buys
-    case sellFirst
-    
-    /// Execute largest orders first
-    case largestFirst
-    
-    var displayName: String {
-        switch self {
-        case .immediate: return "Immediate"
-        case .byPriority: return "By Priority"
-        case .sellFirst: return "Sell First"
-        case .largestFirst: return "Largest First"
-        }
-    }
-    
-    var description: String {
-        switch self {
-        case .immediate:
-            return "Execute all orders simultaneously"
-        case .byPriority:
-            return "Execute high priority orders first"
-        case .sellFirst:
-            return "Sell overweight positions first to generate cash"
-        case .largestFirst:
-            return "Execute largest orders first for maximum impact"
-        }
-    }
-}
-
-/// Execution schedule for rebalancing
-struct RebalanceSchedule: Sendable {
-    /// Target execution date
-    let targetDate: Date
-    
-    /// Execution strategy
-    let strategy: ExecutionStrategy
-    
-    /// Maximum orders per day (for dollar cost averaging)
-    let maxOrdersPerDay: Int?
-    
-    /// Whether to use market orders or limit orders
-    let useLimitOrders: Bool
-    
-    /// Limit order buffer (e.g., 0.01 = 1% from current price)
-    let limitOrderBuffer: Double?
-}
-
-// MARK: - Convenience Extensions
-
-extension RebalancePlan {
-    
-    /// Buy orders only
-    var buyOrders: [RebalanceOrder] {
-        orders.filter { $0.action == .buy }
-    }
-    
-    /// Sell orders only
-    var sellOrders: [RebalanceOrder] {
-        orders.filter { $0.action == .sell }
-    }
-    
-    /// Orders sorted by priority (high to low)
-    var prioritizedOrders: [RebalanceOrder] {
-        orders.sorted { $0.priority > $1.priority }
-    }
-    
-    /// Total number of orders
-    var orderCount: Int {
-        orders.count
-    }
-    
-    /// Estimated transaction count (round trip)
-    var transactionCount: Int {
-        orders.count
-    }
-    
-    /// Formatted summary
-    var summary: String {
-        var result = "Rebalance Plan: \(portfolioName ?? "Portfolio")\n"
-        result += "Status: \(status.displayName)\n"
-        result += "Created: \(createdAt.formatted(date: .abbreviated, time: .shortened))\n\n"
-        
-        result += "Orders (\(orderCount)):\n"
-        for order in prioritizedOrders {
-            let amount = String(format: "%.2f", order.estimatedAmount)
-            result += "- \(order.action.displayName) \(order.shares) \(order.symbol) ($\(amount))\n"
-        }
-        
-        result += "\nTotals:\n"
-        result += "- Buy: $\(String(format: "%.2f", totalBuyAmount))\n"
-        result += "- Sell: $\(String(format: "%.2f", totalSellAmount))\n"
-        result += "- Net Cash: $\(String(format: "%.2f", netCashNeeded))\n"
-        
-        if let tax = estimatedTaxImpact {
-            result += "- Est. Tax Impact: $\(String(format: "%.2f", tax))\n"
-        }
-        
-        return result
-    }
-    
-    /// Checks if plan can be executed with available cash
-    /// - Parameter availableCash: Cash available for trading
-    /// - Returns: True if sufficient cash
-    func canExecute(with availableCash: Double) -> Bool {
-        // If net cash needed is negative (selling more than buying), always executable
-        guard netCashNeeded > 0 else { return true }
-        
-        // Need enough cash for net purchases
-        return availableCash >= netCashNeeded
-    }
-    
-    /// Creates an executed copy of the plan
-    func markAsExecuted() -> RebalancePlan {
-        RebalancePlan(
-            id: id,
-            portfolioId: portfolioId,
-            portfolioName: portfolioName,
-            createdAt: createdAt,
-            status: .executed,
-            orders: orders,
-            driftAnalysis: driftAnalysis,
-            estimatedTaxImpact: estimatedTaxImpact,
-            notes: notes
-        )
-    }
-    
-    /// Creates a cancelled copy of the plan
-    func markAsCancelled(reason: String? = nil) -> RebalancePlan {
-        let combinedNotes: String
-        if let existingNotes = notes, let reason = reason {
-            combinedNotes = "\(existingNotes)\nCancelled: \(reason)"
-        } else if let reason = reason {
-            combinedNotes = "Cancelled: \(reason)"
-        } else {
-            combinedNotes = notes ?? ""
-        }
-        
-        return RebalancePlan(
-            id: id,
-            portfolioId: portfolioId,
-            portfolioName: portfolioName,
-            createdAt: createdAt,
-            status: .cancelled,
-            orders: orders,
-            driftAnalysis: driftAnalysis,
-            estimatedTaxImpact: estimatedTaxImpact,
-            notes: combinedNotes
-        )
-    }
-}
-
-extension RebalanceOrder {
-    
-    /// Formatted string for display
-    var displayString: String {
-        let amount = String(format: "%.2f", estimatedAmount)
-        let shareStr = String(format: "%.0f", shares)
-        return "\(action.displayName) \(shareStr) \(symbol) ($\(amount))"
-    }
-    
-    /// Creates a high priority version
     func withHighPriority() -> RebalanceOrder {
         RebalanceOrder(
             id: id,
@@ -311,44 +87,204 @@ extension RebalanceOrder {
     }
 }
 
+// MARK: - Filtered Reason Info
+
+struct FilteredOrderInfo: Sendable {
+    let symbol: String
+    let reason: String
+}
+
+// MARK: - Plan
+
+struct RebalancePlan: Identifiable, Sendable {
+    let id: UUID
+    let portfolioId: UUID?
+    let portfolioName: String?
+    let createdAt: Date
+    let status: PlanStatus
+    
+    let orders: [RebalanceOrder]
+    let driftAnalysis: DriftAnalysis?
+    let filteredReasons: [FilteredOrderInfo]?
+    
+    let totalBuyAmount: Double
+    let totalSellAmount: Double
+    
+    var netCashNeeded: Double {
+        totalBuyAmount - totalSellAmount
+    }
+    
+    let estimatedTaxImpact: Double?
+    let notes: String?
+    
+    init(
+        id: UUID = UUID(),
+        portfolioId: UUID? = nil,
+        portfolioName: String? = nil,
+        createdAt: Date = Date(),
+        status: PlanStatus = .draft,
+        orders: [RebalanceOrder],
+        driftAnalysis: DriftAnalysis? = nil,
+        filteredReasons: [FilteredOrderInfo]? = nil,
+        estimatedTaxImpact: Double? = nil,
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.portfolioId = portfolioId
+        self.portfolioName = portfolioName
+        self.createdAt = createdAt
+        self.status = status
+        self.orders = orders
+        self.driftAnalysis = driftAnalysis
+        self.filteredReasons = filteredReasons
+        self.totalBuyAmount = orders.filter { $0.action == .buy }.reduce(0) { $0 + $1.estimatedAmount }
+        self.totalSellAmount = orders.filter { $0.action == .sell }.reduce(0) { $0 + $1.estimatedAmount }
+        self.estimatedTaxImpact = estimatedTaxImpact
+        self.notes = notes
+    }
+}
+
+// MARK: - Extensions
+
+extension RebalancePlan {
+    
+    var buyOrders: [RebalanceOrder] {
+        orders.filter { $0.action == .buy }
+    }
+    
+    var sellOrders: [RebalanceOrder] {
+        orders.filter { $0.action == .sell }
+    }
+    
+    var prioritizedOrders: [RebalanceOrder] {
+        orders.sorted { $0.priority > $1.priority }
+    }
+    
+    var orderCount: Int {
+        orders.count
+    }
+    
+    var hasFilteredOrders: Bool {
+        !(filteredReasons?.isEmpty ?? true)
+    }
+    
+    func canExecute(with availableCash: Double) -> Bool {
+        guard netCashNeeded > 0 else { return true }
+        return availableCash >= netCashNeeded
+    }
+    
+    func markAsExecuted() -> RebalancePlan {
+        RebalancePlan(
+            id: id,
+            portfolioId: portfolioId,
+            portfolioName: portfolioName,
+            createdAt: createdAt,
+            status: .executed,
+            orders: orders,
+            driftAnalysis: driftAnalysis,
+            filteredReasons: filteredReasons,
+            estimatedTaxImpact: estimatedTaxImpact,
+            notes: notes
+        )
+    }
+    
+    func markAsCancelled(reason: String? = nil) -> RebalancePlan {
+        let combinedNotes: String
+        if let existing = notes, let new = reason {
+            combinedNotes = "\(existing)\nCancelled: \(new)"
+        } else {
+            combinedNotes = reason ?? notes ?? ""
+        }
+        
+        return RebalancePlan(
+            id: id,
+            portfolioId: portfolioId,
+            portfolioName: portfolioName,
+            createdAt: createdAt,
+            status: .cancelled,
+            orders: orders,
+            driftAnalysis: driftAnalysis,
+            filteredReasons: filteredReasons,
+            estimatedTaxImpact: estimatedTaxImpact,
+            notes: combinedNotes
+        )
+    }
+    
+    var summary: String {
+        var lines: [String] = []
+        lines.append("Rebalance Plan: \(portfolioName ?? "Portfolio")")
+        lines.append("Status: \(status.displayName)")
+        lines.append("Created: \(createdAt.formatted(date: .abbreviated, time: .shortened))")
+        
+        if !orders.isEmpty {
+            lines.append("")
+            lines.append("Orders (\(orderCount)):")
+            for order in prioritizedOrders {
+                let amount = String(format: "%.2f", order.estimatedAmount)
+                lines.append("- \(order.action.displayName) \(order.shares) \(order.symbol) ($\(amount))")
+            }
+        }
+        
+        lines.append("")
+        lines.append("Totals:")
+        lines.append("- Buy: $\(String(format: "%.2f", totalBuyAmount))")
+        lines.append("- Sell: $\(String(format: "%.2f", totalSellAmount))")
+        lines.append("- Net Cash: $\(String(format: "%.2f", netCashNeeded))")
+        
+        if let reasons = filteredReasons, !reasons.isEmpty {
+            lines.append("")
+            lines.append("Filtered (\(reasons.count)):")
+            for reason in reasons {
+                lines.append("- \(reason.symbol): \(reason.reason)")
+            }
+        }
+        
+        return lines.joined(separator: "\n")
+    }
+}
+
+extension RebalanceOrder {
+    var displayString: String {
+        let amount = String(format: "%.2f", estimatedAmount)
+        let shareStr = String(format: "%.0f", shares)
+        return "\(action.displayName) \(shareStr) \(symbol) ($\(amount))"
+    }
+}
+
 // MARK: - Validation
 
 struct RebalancePlanValidator {
     
-    /// Validates a plan for common issues
-    /// - Parameter plan: Plan to validate
-    /// - Returns: Array of validation messages (empty if valid)
     static func validate(_ plan: RebalancePlan) -> [String] {
         var issues: [String] = []
         
-        // Check for empty plan
         if plan.orders.isEmpty {
             issues.append("Plan has no orders")
         }
         
-        // Check for negative shares
-        for order in plan.orders where order.shares <= 0 {
-            issues.append("\(order.symbol): Invalid share count \(order.shares)")
+        for order in plan.orders {
+            if order.shares <= 0 {
+                issues.append("\(order.symbol): Invalid share count \(order.shares)")
+            }
+            if order.estimatedPrice <= 0 {
+                issues.append("\(order.symbol): Invalid price \(order.estimatedPrice)")
+            }
         }
         
-        // Check for zero prices
-        for order in plan.orders where order.estimatedPrice <= 0 {
-            issues.append("\(order.symbol): Invalid price \(order.estimatedPrice)")
-        }
-        
-        // Check for extreme allocations
-        let totalBuyRatio = plan.totalBuyAmount / (plan.totalSellAmount + plan.totalBuyAmount + 1)
-        if totalBuyRatio > 0.9 {
-            issues.append("Plan is heavily skewed toward buying (\(Int(totalBuyRatio * 100))%)")
-        }
-        if totalBuyRatio < 0.1 {
-            issues.append("Plan is heavily skewed toward selling (\(Int((1-totalBuyRatio) * 100))%)")
+        // Check for extreme skew
+        let total = plan.totalBuyAmount + plan.totalSellAmount
+        if total > 0 {
+            let buyRatio = plan.totalBuyAmount / total
+            if buyRatio > 0.9 {
+                issues.append("Plan heavily skewed toward buying (\(Int(buyRatio * 100))%)")
+            } else if buyRatio < 0.1 {
+                issues.append("Plan heavily skewed toward selling (\(Int((1-buyRatio) * 100))%)")
+            }
         }
         
         return issues
     }
     
-    /// Checks if plan is valid
     static func isValid(_ plan: RebalancePlan) -> Bool {
         validate(plan).isEmpty
     }

@@ -7,6 +7,25 @@
 
 import Foundation
 
+// MARK: - Analysis Constants
+
+/// Constants for drift analysis calculations
+enum DriftAnalysisConstants {
+    /// Default drift threshold (5%)
+    static let defaultThreshold: Double = 0.05
+    
+    /// Epsilon for floating point comparisons
+    static let epsilon: Double = 1e-10
+    
+    /// Tolerance for considering allocation as normalized (1%)
+    static let normalizationTolerance: Double = 0.01
+    
+    /// Minimum weight to avoid division issues
+    static let minWeight: Double = 1e-10
+}
+
+// MARK: - Drift Types
+
 /// Analysis result for portfolio drift
 struct DriftAnalysis: Sendable {
     /// Total portfolio drift (sum of absolute deviations / 2)
@@ -49,25 +68,40 @@ struct PositionDrift: Sendable {
     
     /// Whether position is overweight
     var isOverweight: Bool {
-        drift > 0
+        drift > DriftAnalysisConstants.epsilon
     }
     
     /// Whether position is underweight
     var isUnderweight: Bool {
-        drift < 0
+        drift < -DriftAnalysisConstants.epsilon
     }
     
-    /// Value adjustment needed to reach target
-    var adjustmentValue: Double {
-        drift * (currentValue / max(currentWeight, 0.0001))
+    /// Value adjustment needed to reach target (nil if cannot calculate)
+    var adjustmentValue: Double? {
+        // Guard against division by zero
+        guard currentWeight > DriftAnalysisConstants.minWeight else {
+            // For positions with no current weight, calculate based on total
+            return nil
+        }
+        return drift * (currentValue / currentWeight)
+    }
+    
+    /// Formatted description
+    var description: String {
+        let direction = isOverweight ? "Overweight" : (isUnderweight ? "Underweight" : "On target")
+        let pct = Int(absoluteDrift * 100)
+        return "\(symbol): \(direction) by \(pct)%"
     }
 }
 
-/// Errors that can occur during drift analysis
+// MARK: - Errors
+
 enum DriftAnalysisError: LocalizedError, Sendable {
     case noPositions
     case invalidTargetAllocation
     case totalValueZero
+    case totalValueNegative
+    case allocationSumZero
     
     var errorDescription: String? {
         switch self {
@@ -77,30 +111,40 @@ enum DriftAnalysisError: LocalizedError, Sendable {
             return "Target allocation is invalid or empty"
         case .totalValueZero:
             return "Portfolio total value is zero"
+        case .totalValueNegative:
+            return "Portfolio total value is negative"
+        case .allocationSumZero:
+            return "Target allocation sums to zero"
+        }
+    }
+    
+    var recoverySuggestion: String? {
+        switch self {
+        case .noPositions:
+            return "Add positions to the portfolio before analyzing"
+        case .invalidTargetAllocation:
+            return "Set a target allocation in portfolio settings"
+        case .totalValueZero, .totalValueNegative:
+            return "Check that positions have valid prices and shares"
+        case .allocationSumZero:
+            return "Ensure target allocation percentages sum to 100%"
         }
     }
 }
 
+// MARK: - Analyzer
+
 /// Analyzer for portfolio drift from target allocation
 struct DriftAnalyzer: Sendable {
-    
-    // MARK: - Properties
-    
-    /// Default drift threshold (5%)
-    static let defaultThreshold: Double = 0.05
     
     /// Drift threshold for rebalancing trigger
     let threshold: Double
     
-    // MARK: - Initialization
-    
     /// Creates a drift analyzer
     /// - Parameter threshold: Drift threshold (default 5%)
-    init(threshold: Double = defaultThreshold) {
+    init(threshold: Double = DriftAnalysisConstants.defaultThreshold) {
         self.threshold = threshold
     }
-    
-    // MARK: - Public Methods
     
     /// Analyzes portfolio drift from target allocation
     /// - Parameters:
@@ -115,20 +159,10 @@ struct DriftAnalyzer: Sendable {
         totalValue: Double
     ) throws -> DriftAnalysis {
         // Validate inputs
-        guard !positions.isEmpty else {
-            throw DriftAnalysisError.noPositions
-        }
+        try validateInputs(positions: positions, targetAllocation: targetAllocation, totalValue: totalValue)
         
-        guard !targetAllocation.isEmpty else {
-            throw DriftAnalysisError.invalidTargetAllocation
-        }
-        
-        guard totalValue > 0 else {
-            throw DriftAnalysisError.totalValueZero
-        }
-        
-        // Normalize target allocation to ensure it sums to 1.0
-        let normalizedTarget = normalizeAllocation(targetAllocation)
+        // Normalize target allocation
+        let normalizedTarget = try normalizeAllocation(targetAllocation)
         
         // Calculate drift for each position
         var positionDrifts: [PositionDrift] = []
@@ -136,35 +170,27 @@ struct DriftAnalyzer: Sendable {
         
         // Analyze existing positions
         for position in positions {
-            let symbol = position.symbol ?? "Unknown"
-            let currentValue = position.currentValue ?? 0
-            let currentWeight = currentValue / totalValue
-            let targetWeight = normalizedTarget[symbol] ?? 0
-            let drift = currentWeight - targetWeight
-            
-            let positionDrift = PositionDrift(
-                symbol: symbol,
-                currentValue: currentValue,
-                currentWeight: currentWeight,
-                targetWeight: targetWeight,
-                drift: drift
+            let drift = calculateDrift(
+                position: position,
+                targetWeight: normalizedTarget[position.symbol ?? ""] ?? 0,
+                totalValue: totalValue
             )
             
-            positionDrifts.append(positionDrift)
-            totalAbsoluteDrift += abs(drift)
+            positionDrifts.append(drift)
+            totalAbsoluteDrift += abs(drift.drift)
         }
         
         // Check for target positions not in current holdings
         let currentSymbols = Set(positions.compactMap { $0.symbol })
         for (symbol, targetWeight) in normalizedTarget {
-            if !currentSymbols.contains(symbol) && targetWeight > 0 {
+            if !currentSymbols.contains(symbol) && targetWeight > DriftAnalysisConstants.epsilon {
                 // Missing position that should be added
                 let positionDrift = PositionDrift(
                     symbol: symbol,
                     currentValue: 0,
                     currentWeight: 0,
                     targetWeight: targetWeight,
-                    drift: -targetWeight  // Negative = underweight (missing)
+                    drift: -targetWeight
                 )
                 
                 positionDrifts.append(positionDrift)
@@ -175,9 +201,7 @@ struct DriftAnalyzer: Sendable {
         // Sort by absolute drift (descending)
         positionDrifts.sort { $0.absoluteDrift > $1.absoluteDrift }
         
-        // Calculate total drift (sum of absolute deviations / 2)
-        // Dividing by 2 because overweight in one position
-        // must be balanced by underweight in others
+        // Calculate total drift
         let totalDrift = totalAbsoluteDrift / 2
         
         // Determine if rebalancing is needed
@@ -193,11 +217,6 @@ struct DriftAnalyzer: Sendable {
     }
     
     /// Quick check if rebalancing is needed
-    /// - Parameters:
-    ///   - positions: Current positions
-    ///   - targetAllocation: Target allocation
-    ///   - totalValue: Total portfolio value
-    /// - Returns: True if any position exceeds threshold
     func needsRebalancing(
         positions: [Position],
         targetAllocation: [String: Double],
@@ -215,22 +234,53 @@ struct DriftAnalyzer: Sendable {
         }
     }
     
-    /// Calculates drift for a specific position
-    /// - Parameters:
-    ///   - position: Position to analyze
-    ///   - targetWeight: Target weight for this position
-    ///   - totalValue: Total portfolio value
-    /// - Returns: Position drift info
-    func analyzePosition(
-        _ position: Position,
+    // MARK: - Private Helpers
+    
+    private func validateInputs(
+        positions: [Position],
+        targetAllocation: [String: Double],
+        totalValue: Double
+    ) throws {
+        guard !positions.isEmpty else {
+            throw DriftAnalysisError.noPositions
+        }
+        
+        guard !targetAllocation.isEmpty else {
+            throw DriftAnalysisError.invalidTargetAllocation
+        }
+        
+        guard totalValue > DriftAnalysisConstants.epsilon else {
+            if totalValue < 0 {
+                throw DriftAnalysisError.totalValueNegative
+            }
+            throw DriftAnalysisError.totalValueZero
+        }
+    }
+    
+    private func normalizeAllocation(_ allocation: [String: Double]) throws -> [String: Double] {
+        let total = allocation.values.reduce(0, +)
+        
+        guard total > DriftAnalysisConstants.epsilon else {
+            throw DriftAnalysisError.allocationSumZero
+        }
+        
+        // If total is already close to 1.0, return as-is
+        if abs(total - 1.0) < DriftAnalysisConstants.normalizationTolerance {
+            return allocation
+        }
+        
+        // Normalize to sum to 1.0
+        return allocation.mapValues { $0 / total }
+    }
+    
+    private func calculateDrift(
+        position: Position,
         targetWeight: Double,
         totalValue: Double
-    ) -> PositionDrift? {
-        guard totalValue > 0 else { return nil }
-        
+    ) -> PositionDrift {
         let symbol = position.symbol ?? "Unknown"
         let currentValue = position.currentValue ?? 0
-        let currentWeight = currentValue / totalValue
+        let currentWeight = totalValue > 0 ? currentValue / totalValue : 0
         let drift = currentWeight - targetWeight
         
         return PositionDrift(
@@ -243,35 +293,16 @@ struct DriftAnalyzer: Sendable {
     }
 }
 
-// MARK: - Private Helpers
-
-private extension DriftAnalyzer {
-    
-    /// Normalizes allocation to sum to 1.0
-    func normalizeAllocation(_ allocation: [String: Double]) -> [String: Double] {
-        let total = allocation.values.reduce(0, +)
-        guard total > 0 else { return allocation }
-        
-        // If total is already close to 1.0, return as-is
-        if abs(total - 1.0) < 0.01 {
-            return allocation
-        }
-        
-        // Normalize to sum to 1.0
-        return allocation.mapValues { $0 / total }
-    }
-}
-
-// MARK: - Convenience Extensions
+// MARK: - Extensions
 
 extension DriftAnalysis {
     
-    /// Positions that are overweight (drift > 0)
+    /// Positions that are overweight
     var overweightPositions: [PositionDrift] {
         positions.filter { $0.isOverweight }
     }
     
-    /// Positions that are underweight (drift < 0)
+    /// Positions that are underweight
     var underweightPositions: [PositionDrift] {
         positions.filter { $0.isUnderweight }
     }
@@ -283,16 +314,19 @@ extension DriftAnalysis {
     
     /// Formatted summary string
     var summary: String {
-        var result = "Drift Analysis (\(Int(threshold * 100))% threshold)\n"
-        result += "Total Drift: \(String(format: "%.2f", totalDrift * 100))%\n"
-        result += "Rebalancing Needed: \(needsRebalancing ? "Yes" : "No")\n\n"
+        var lines: [String] = []
+        lines.append("Drift Analysis (\(Int(threshold * 100))% threshold)")
+        lines.append("Total Drift: \(String(format: "%.2f", totalDrift * 100))%")
+        lines.append("Rebalancing Needed: \(needsRebalancing ? "Yes" : "No")")
         
-        result += "Significant Deviations:\n"
-        for position in significantDrifts {
-            let direction = position.isOverweight ? "Over" : "Under"
-            result += "- \(position.symbol): \(direction) by \(String(format: "%.1f", position.absoluteDrift * 100))%\n"
+        if !significantDrifts.isEmpty {
+            lines.append("")
+            lines.append("Significant Deviations:")
+            for position in significantDrifts {
+                lines.append("- \(position.description)")
+            }
         }
         
-        return result
+        return lines.joined(separator: "\n")
     }
 }
