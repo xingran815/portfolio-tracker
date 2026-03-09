@@ -8,7 +8,7 @@ import Foundation
 print("🧪 Testing Kimi Coding API (Final)")
 print("===================================")
 print("Endpoint: https://api.kimi.com/coding/v1")
-print("Headers: User-Agent: claude-code/1.0, X-Client-Name: claude-code")
+print("Headers: User-Agent: claude-code/2.0, X-Client-Name: claude-code")
 print("")
 
 // Get API key
