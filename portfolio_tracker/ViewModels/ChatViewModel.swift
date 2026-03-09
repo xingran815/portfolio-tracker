@@ -2,49 +2,80 @@
 //  ChatViewModel.swift
 //  portfolio_tracker
 //
-//  ViewModel for chat interface
+//  ViewModel for AI chat with portfolio context
 //
 
-import Foundation
+import SwiftUI
 import os.log
 
-/// ViewModel for managing chat conversations
+/// ViewModel for managing AI chat conversations
 @MainActor
 @Observable
 final class ChatViewModel {
     
     // MARK: - Properties
     
+    /// Chat messages
     var messages: [ChatMessage] = []
-    var inputText: String = ""
-    var isLoading: Bool = false
+    
+    /// Current user input
+    var inputText = ""
+    
+    /// Whether AI is generating response
+    var isLoading = false
+    
+    /// Error message
     var errorMessage: String?
     
-    private let llmService: any LLMServiceProtocol
-    private let portfolio: Portfolio?
-    private var currentTask: Task<Void, Never>?
-    private let logger = Logger(subsystem: "com.portfolio_tracker", category: "ChatViewModel")
+    /// Whether to include portfolio context with messages
+    var includePortfolioContext = true
     
-    // Track current assistant message ID for safe updates
+    /// Current portfolio for context
+    private(set) var portfolio: Portfolio?
+    
+    /// Chat history persistence key
+    private var chatHistoryKey: String {
+        if let portfolioId = portfolio?.id?.uuidString {
+            return "chat_history_\(portfolioId)"
+        }
+        return "chat_history_global"
+    }
+    
+    // MARK: - Dependencies
+    
+    private let llmService: any LLMServiceProtocol
+    private var currentTask: Task<Void, Never>?
     private var currentAssistantMessageId: UUID?
+    private let logger = Logger(subsystem: "com.portfolio_tracker", category: "ChatViewModel")
     
     // MARK: - Initialization
     
     init(
-        llmService: any LLMServiceProtocol = KimiService(),
+        llmService: any LLMServiceProtocol = MockLLMService(),
         portfolio: Portfolio? = nil
     ) {
         self.llmService = llmService
         self.portfolio = portfolio
+        loadChatHistory()
+        addWelcomeMessageIfNeeded()
     }
     
     // MARK: - Public Methods
     
-    /// Sends a message and receives streaming response
-    func sendMessage() {
-        guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
+    /// Sets the current portfolio for context
+    /// - Parameter portfolio: Portfolio to include in context
+    func setPortfolio(_ portfolio: Portfolio?) {
+        // Save current chat history if portfolio is changing
+        if self.portfolio?.id != portfolio?.id {
+            saveChatHistory()
+            self.portfolio = portfolio
+            loadChatHistory()
         }
+    }
+    
+    /// Sends user message and streams AI response
+    func sendMessage() {
+        guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
         let userMessage = ChatMessage(role: .user, content: inputText)
         messages.append(userMessage)
@@ -66,12 +97,44 @@ final class ChatViewModel {
         isLoading = false
     }
     
-    /// Clears the conversation history
+    /// Clears chat history
     func clearConversation() {
         cancelStreaming()
         messages.removeAll()
         errorMessage = nil
         currentAssistantMessageId = nil
+        Task {
+            await llmService.clearHistory()
+        }
+        addWelcomeMessageIfNeeded()
+        saveChatHistory()
+        logger.info("Cleared chat history")
+    }
+    
+    /// Regenerates the last AI response
+    func regenerateLastResponse() {
+        guard let lastUserMessage = messages.last(where: { $0.role == .user }) else { return }
+        
+        // Remove the last assistant message if exists
+        if let lastIndex = messages.indices.last,
+           messages[lastIndex].role == .assistant {
+            messages.remove(at: lastIndex)
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        currentAssistantMessageId = nil
+        
+        currentTask = Task {
+            await streamResponse(to: lastUserMessage.content)
+        }
+    }
+    
+    /// Copies message content to clipboard
+    /// - Parameter message: Message to copy
+    func copyToClipboard(_ message: ChatMessage) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(message.content, forType: .string)
     }
     
     /// Checks if LLM is configured
@@ -79,11 +142,27 @@ final class ChatViewModel {
         await llmService.validateAPIKey()
     }
     
+    /// Saves chat history to UserDefaults
+    func saveChatHistory() {
+        do {
+            let data = try JSONEncoder().encode(messages)
+            UserDefaults.standard.set(data, forKey: chatHistoryKey)
+            logger.debug("Saved chat history for \(self.chatHistoryKey)")
+        } catch {
+            logger.error("Failed to save chat history: \(error.localizedDescription)")
+        }
+    }
+    
     // MARK: - Private Methods
     
     private func streamResponse(to message: String) async {
         // Build context from portfolio
-        let context = buildContext()
+        let context = includePortfolioContext ? buildContext() : ConversationContext(
+            portfolioName: nil,
+            positions: [],
+            riskProfile: nil,
+            targetAllocation: nil
+        )
         
         // Create assistant message placeholder with unique ID
         let assistantMessage = ChatMessage(role: .assistant, content: "")
@@ -125,6 +204,9 @@ final class ChatViewModel {
         logger.info("Received response: \(fullResponse.prefix(100))...")
         currentAssistantMessageId = nil
         isLoading = false
+        
+        // Save history after each complete exchange
+        saveChatHistory()
     }
     
     /// Safely updates assistant message by ID (prevents race conditions)
@@ -144,6 +226,36 @@ final class ChatViewModel {
     /// Removes a message by ID
     private func removeMessage(id: UUID) {
         messages.removeAll { $0.id == id }
+    }
+    
+    private func loadChatHistory() {
+        guard let data = UserDefaults.standard.data(forKey: chatHistoryKey) else {
+            messages = []
+            addWelcomeMessageIfNeeded()
+            return
+        }
+        
+        do {
+            messages = try JSONDecoder().decode([ChatMessage].self, from: data)
+            if messages.isEmpty {
+                addWelcomeMessageIfNeeded()
+            }
+            logger.debug("Loaded chat history for \(self.chatHistoryKey)")
+        } catch {
+            logger.error("Failed to load chat history: \(error.localizedDescription)")
+            messages = []
+            addWelcomeMessageIfNeeded()
+        }
+    }
+    
+    private func addWelcomeMessageIfNeeded() {
+        guard messages.isEmpty else { return }
+        
+        let welcomeMessage = ChatMessage(
+            role: .assistant,
+            content: "Hello! I'm your AI portfolio assistant. I can help you analyze your portfolio, suggest rebalancing strategies, and answer investment questions.\n\nHow can I help you today?"
+        )
+        messages.append(welcomeMessage)
     }
     
     private func buildContext() -> ConversationContext {
@@ -172,14 +284,5 @@ final class ChatViewModel {
             riskProfile: portfolio.riskProfile.displayName,
             targetAllocation: portfolio.targetAllocation
         )
-    }
-}
-
-// MARK: - Factory Extension
-
-extension ChatViewModel {
-    /// Creates a ChatViewModel with mock LLM service for testing
-    static func mock(portfolio: Portfolio? = nil) -> ChatViewModel {
-        ChatViewModel(llmService: MockLLMService(), portfolio: portfolio)
     }
 }

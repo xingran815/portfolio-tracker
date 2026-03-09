@@ -30,7 +30,7 @@ struct Quote: Sendable, Codable {
 }
 
 /// Errors that can occur during data fetching
-enum DataProviderError: LocalizedError {
+enum DataProviderError: LocalizedError, Sendable {
     case invalidSymbol(String)
     case networkError(underlying: Error)
     case rateLimited
@@ -39,6 +39,7 @@ enum DataProviderError: LocalizedError {
     case apiKeyMissing
     case invalidAPIKey
     case serviceUnavailable
+    case noData
     
     var errorDescription: String? {
         switch self {
@@ -58,6 +59,8 @@ enum DataProviderError: LocalizedError {
             return "Invalid API key. Please check your Alpha Vantage API key in Settings."
         case .serviceUnavailable:
             return "Alpha Vantage service is temporarily unavailable"
+        case .noData:
+            return "No data available for this symbol"
         }
     }
 }
@@ -79,6 +82,52 @@ protocol DataProviderProtocol: Sendable {
     /// - Returns: Dictionary mapping symbols to quotes
     /// - Throws: DataProviderError if request fails
     func fetchQuotes(symbols: [String], market: Market) async throws -> [String: Quote]
+}
+
+// MARK: - Mock Implementation
+
+/// Mock data provider for testing and UI development
+struct MockDataProvider: DataProviderProtocol {
+    
+    private let shouldFail: Bool
+    private let delay: Duration
+    
+    init(shouldFail: Bool = false, delay: Duration = .milliseconds(500)) {
+        self.shouldFail = shouldFail
+        self.delay = delay
+    }
+    
+    func fetchQuote(symbol: String, market: Market) async throws -> Quote {
+        try await Task.sleep(for: delay)
+        
+        if shouldFail {
+            throw DataProviderError.networkError(underlying: NSError(domain: "Mock", code: -1))
+        }
+        
+        // Generate deterministic mock price based on symbol
+        let hash = abs(symbol.hashValue)
+        let basePrice = Double(hash % 1000) + 10.0
+        let change = Double(hash % 100) / 10.0 - 5.0
+        let changePercent = (change / basePrice) * 100
+        
+        return Quote(
+            symbol: symbol,
+            price: basePrice,
+            change: change,
+            changePercent: changePercent,
+            volume: Int64(hash % 1000000),
+            lastUpdated: Date(),
+            currency: market.currency
+        )
+    }
+    
+    func fetchQuotes(symbols: [String], market: Market) async throws -> [String: Quote] {
+        var quotes: [String: Quote] = [:]
+        for symbol in symbols {
+            quotes[symbol] = try await fetchQuote(symbol: symbol, market: market)
+        }
+        return quotes
+    }
 }
 
 /// Cache entry for quotes

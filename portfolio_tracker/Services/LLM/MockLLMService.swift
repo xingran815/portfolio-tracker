@@ -57,6 +57,10 @@ actor MockLLMService: LLMServiceProtocol {
         return .valid
     }
     
+    func clearHistory() {
+        // Mock service doesn't maintain persistent history
+    }
+    
     // MARK: - Response Generation
     
     private func generateResponse(for message: String, context: ConversationContext) -> String {
