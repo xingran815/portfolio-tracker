@@ -90,15 +90,15 @@ final class ChatViewModel {
         let assistantIndex = messages.count - 1
         
         // Stream response
-        let stream = llmService.sendMessage(
-            message,
-            context: context,
-            history: messages.dropLast() // Exclude current assistant message
-        )
-        
-        var fullResponse = ""
-        
         do {
+            let stream = try await llmService.sendMessage(
+                message,
+                context: context,
+                history: Array(messages.dropLast()) // Exclude current assistant message
+            )
+            
+            var fullResponse = ""
+            
             for try await chunk in stream {
                 // Check for cancellation
                 if Task.isCancelled {
@@ -132,21 +132,21 @@ final class ChatViewModel {
             )
         }
         
-        let positions = portfolio.positions?.compactMap { position -> ConversationContext.PositionSummary? in
-            guard let position = position as? Position else { return nil }
-            return ConversationContext.PositionSummary(
+        // Get positions from NSSet
+        let positionSet = portfolio.positions as? Set<Position> ?? []
+        let positions = positionSet.map { position -> ConversationContext.PositionSummary in
+            ConversationContext.PositionSummary(
                 symbol: position.symbol ?? "Unknown",
                 shares: position.shares,
-                currentValue: position.currentValue
+                currentValue: position.currentPrice * position.shares
             )
-        } ?? []
+        }
         
         return ConversationContext(
             portfolioName: portfolio.name,
             positions: positions,
-            riskProfile: portfolio.riskProfile?.displayName,
+            riskProfile: portfolio.riskProfile.displayName,
             targetAllocation: portfolio.targetAllocation
         )
     }
 }
-
