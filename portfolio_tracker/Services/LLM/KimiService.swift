@@ -331,7 +331,7 @@ Guidelines:
         if !context.positions.isEmpty {
             prompt += "\n\nCurrent Positions:"
             for position in context.positions {
-                prompt += "\n- \(position.symbol): \(String(format: "%.2f", position.shares)) shares, $")
+                prompt += "\n- \(position.symbol): \(String(format: "%.2f", position.shares)) shares"
             }
         }
         
