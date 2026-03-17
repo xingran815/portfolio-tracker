@@ -30,8 +30,11 @@ final class ChatViewModel {
     /// Whether to include portfolio context with messages
     var includePortfolioContext = true
     
-    /// Current portfolio for context
-    private(set) var portfolio: Portfolio?
+    /// Current portfolio for context (CoreData object)
+    private var portfolio: Portfolio?
+    
+    /// View-safe portfolio data
+    private(set) var portfolioData: PortfolioViewData?
     
     /// Chat history persistence key
     private var chatHistoryKey: String {
@@ -43,21 +46,31 @@ final class ChatViewModel {
     
     // MARK: - Dependencies
     
-    private let llmService: any LLMServiceProtocol
+    private var llmService: any LLMServiceProtocol
     private var currentTask: Task<Void, Never>?
     private var currentAssistantMessageId: UUID?
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "ChatViewModel")
     
+    /// Whether the service is using real API or mock
+    var isUsingRealAPI: Bool {
+        !(llmService is MockLLMService)
+    }
+    
     // MARK: - Initialization
     
     init(
-        llmService: any LLMServiceProtocol = MockLLMService(),
+        llmService: (any LLMServiceProtocol)? = nil,
         portfolio: Portfolio? = nil
     ) {
-        self.llmService = llmService
+        self.llmService = llmService ?? MockLLMService()
         self.portfolio = portfolio
         loadChatHistory()
         addWelcomeMessageIfNeeded()
+        
+        // Check for real API key and switch if available
+        Task {
+            await autoSwitchToRealServiceIfAvailable()
+        }
     }
     
     // MARK: - Public Methods
@@ -69,6 +82,18 @@ final class ChatViewModel {
         if self.portfolio?.id != portfolio?.id {
             saveChatHistory()
             self.portfolio = portfolio
+            self.portfolioData = portfolio.map { PortfolioViewData.from($0) }
+            loadChatHistory()
+        }
+    }
+    
+    /// Sets the current portfolio using view data
+    /// - Parameter portfolioData: Portfolio view data
+    func setPortfolio(_ portfolioData: PortfolioViewData?) {
+        // Save current chat history if portfolio is changing
+        if self.portfolioData?.id != portfolioData?.id {
+            saveChatHistory()
+            self.portfolioData = portfolioData
             loadChatHistory()
         }
     }
@@ -140,6 +165,34 @@ final class ChatViewModel {
     /// Checks if LLM is configured
     func isConfigured() async -> APIKeyValidationResult {
         await llmService.validateAPIKey()
+    }
+    
+    /// Automatically switches to real Kimi API service if API key is available
+    /// Called during initialization
+    private func autoSwitchToRealServiceIfAvailable() async {
+        let apiKeyManager = APIKeyManager.shared
+        if await apiKeyManager.hasKey(for: .kimi) {
+            llmService = KimiService(apiKeyManager: apiKeyManager)
+            logger.info("Auto-switched to real Kimi API service on initialization")
+        }
+    }
+    
+    /// Switches to real Kimi API service if API key is available
+    /// Call this when API key is added in settings
+    func switchToRealService() async {
+        guard !isUsingRealAPI else { return }
+        
+        let apiKeyManager = APIKeyManager.shared
+        if await apiKeyManager.hasKey(for: .kimi) {
+            llmService = KimiService(apiKeyManager: apiKeyManager)
+            logger.info("Switched to real Kimi API service")
+        }
+    }
+    
+    /// Switches back to mock service (for testing)
+    func switchToMockService() {
+        llmService = MockLLMService()
+        logger.info("Switched to mock service")
     }
     
     /// Saves chat history to UserDefaults
@@ -259,7 +312,27 @@ final class ChatViewModel {
     }
     
     private func buildContext() -> ConversationContext {
-        guard let portfolio = portfolio else {
+        // Prefer CoreData object if available for full context
+        if let portfolio = portfolio {
+            let positionSet = portfolio.positions as? Set<Position> ?? []
+            let positions = positionSet.map { position -> ConversationContext.PositionSummary in
+                ConversationContext.PositionSummary(
+                    symbol: position.symbol ?? "Unknown",
+                    shares: position.shares,
+                    currentValue: position.currentPrice * position.shares
+                )
+            }
+            
+            return ConversationContext(
+                portfolioName: portfolio.name,
+                positions: positions,
+                riskProfile: portfolio.riskProfile.displayName,
+                targetAllocation: portfolio.targetAllocation
+            )
+        }
+        
+        // Fallback to view data
+        guard let portfolioData = portfolioData else {
             return ConversationContext(
                 portfolioName: nil,
                 positions: [],
@@ -268,21 +341,11 @@ final class ChatViewModel {
             )
         }
         
-        // Get positions from NSSet
-        let positionSet = portfolio.positions as? Set<Position> ?? []
-        let positions = positionSet.map { position -> ConversationContext.PositionSummary in
-            ConversationContext.PositionSummary(
-                symbol: position.symbol ?? "Unknown",
-                shares: position.shares,
-                currentValue: position.currentPrice * position.shares
-            )
-        }
-        
         return ConversationContext(
-            portfolioName: portfolio.name,
-            positions: positions,
-            riskProfile: portfolio.riskProfile.displayName,
-            targetAllocation: portfolio.targetAllocation
+            portfolioName: portfolioData.name,
+            positions: [], // View data doesn't include individual positions
+            riskProfile: portfolioData.riskProfile.displayName,
+            targetAllocation: portfolioData.targetAllocation
         )
     }
 }

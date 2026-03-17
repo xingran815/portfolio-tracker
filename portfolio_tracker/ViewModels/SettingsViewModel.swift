@@ -203,17 +203,48 @@ final class SettingsViewModel {
         isValidating = true
         
         Task {
-            // In a real implementation, this would make an actual API call
-            // For now, we simulate validation
-            try? await Task.sleep(for: .seconds(1))
+            // Create AlphaVantageProvider and test with a known symbol
+            let apiKeyManager = APIKeyManager.shared
+            let provider = AlphaVantageProvider(apiKeyManager: apiKeyManager)
             
-            alphaVantageStatus = .valid
-            isValidating = false
-            showSuccess(message: "Alpha Vantage API key is valid")
+            do {
+                // Try to fetch a well-known stock (AAPL) to validate the key
+                let quote = try await provider.fetchQuote(symbol: "AAPL", market: .us)
+                
+                await MainActor.run {
+                    alphaVantageStatus = .valid
+                    isValidating = false
+                    showSuccess(message: "Alpha Vantage API key is valid! Fetched AAPL at $\(String(format: "%.2f", quote.price))")
+                }
+            } catch DataProviderError.apiKeyMissing {
+                await MainActor.run {
+                    alphaVantageStatus = .invalid("API key not found")
+                    isValidating = false
+                    showError(message: "API key not found in keychain")
+                }
+            } catch DataProviderError.invalidAPIKey {
+                await MainActor.run {
+                    alphaVantageStatus = .invalid("Invalid API key")
+                    isValidating = false
+                    showError(message: "Invalid API key. Please check your Alpha Vantage API key.")
+                }
+            } catch DataProviderError.rateLimited {
+                await MainActor.run {
+                    alphaVantageStatus = .invalid("Rate limited")
+                    isValidating = false
+                    showError(message: "Rate limit exceeded. Please wait a moment before trying again.")
+                }
+            } catch {
+                await MainActor.run {
+                    alphaVantageStatus = .invalid("Validation failed")
+                    isValidating = false
+                    showError(message: "Validation failed: \(error.localizedDescription)")
+                }
+            }
         }
     }
     
-    /// Validates Kimi API key
+    /// Validates Kimi API key with actual API call
     func validateKimiKey() {
         guard isKimiConfigured else {
             showError(message: "No API key configured")
@@ -224,13 +255,36 @@ final class SettingsViewModel {
         isValidating = true
         
         Task {
-            // In a real implementation, this would validate with Kimi API
-            // For now, we simulate validation
-            try? await Task.sleep(for: .seconds(1))
+            // Create a real Kimi service and validate the API key
+            let apiKeyManager = APIKeyManager.shared
+            let kimiService = KimiService(apiKeyManager: apiKeyManager)
             
-            kimiStatus = .valid
-            isValidating = false
-            showSuccess(message: "Kimi API key is valid")
+            let result = await kimiService.validateAPIKey()
+            
+            await MainActor.run {
+                isValidating = false
+                
+                switch result {
+                case .valid:
+                    kimiStatus = .valid
+                    showSuccess(message: "Kimi API key is valid and working!")
+                case .notConfigured:
+                    kimiStatus = .invalid("API key not found")
+                    showError(message: "API key not found in keychain")
+                case .invalid:
+                    kimiStatus = .invalid("Invalid API key")
+                    showError(message: "Invalid API key. Please check your Kimi API key.")
+                case .networkError(let message):
+                    kimiStatus = .invalid("Network error")
+                    showError(message: "Network error: \(message)")
+                case .rateLimited:
+                    kimiStatus = .invalid("Rate limited")
+                    showError(message: "Rate limit exceeded. Please try again later.")
+                case .serviceUnavailable:
+                    kimiStatus = .invalid("Service unavailable")
+                    showError(message: "Kimi service is temporarily unavailable")
+                }
+            }
         }
     }
     

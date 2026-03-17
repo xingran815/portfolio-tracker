@@ -9,14 +9,15 @@ import SwiftUI
 
 /// Main chat view with AI assistant
 struct ChatView: View {
-    @State private var viewModel = ChatViewModel()
+    @State private var viewModel: ChatViewModel
     @State private var showingClearConfirmation = false
     @State private var showingContextInfo = false
     
-    let portfolio: Portfolio?
+    let portfolioData: PortfolioViewData?
     
-    init(portfolio: Portfolio? = nil) {
-        self.portfolio = portfolio
+    init(viewModel: ChatViewModel, portfolio: Portfolio? = nil) {
+        _viewModel = State(initialValue: viewModel)
+        self.portfolioData = portfolio.map { PortfolioViewData.from($0) }
     }
     
     var body: some View {
@@ -35,10 +36,10 @@ struct ChatView: View {
             inputArea
         }
         .onAppear {
-            viewModel.setPortfolio(portfolio)
+            viewModel.setPortfolio(portfolioData)
         }
-        .onChange(of: portfolio?.id) { _, _ in
-            viewModel.setPortfolio(portfolio)
+        .onChange(of: portfolioData?.id) { _, _ in
+            viewModel.setPortfolio(portfolioData)
         }
         .onDisappear {
             viewModel.saveChatHistory()
@@ -68,11 +69,34 @@ struct ChatView: View {
     private var chatHeader: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("AI 投资助手")
-                    .font(.headline)
+                HStack(spacing: 8) {
+                    Text("AI 投资助手")
+                        .font(.headline)
+                    
+                    // Mode indicator
+                    if viewModel.isUsingRealAPI {
+                        Label("已连接", systemImage: "checkmark.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.green.opacity(0.15))
+                            .clipShape(Capsule())
+                            .help("已连接到 Kimi AI 服务")
+                    } else {
+                        Label("演示模式", systemImage: "testtube.2")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .clipShape(Capsule())
+                            .help("当前使用模拟回复。请在设置中添加 Kimi API Key 以启用真实 AI 对话。")
+                    }
+                }
                 
-                if let portfolio = portfolio {
-                    Text("上下文: \(portfolio.name ?? "未命名")")
+                if let portfolioData = portfolioData {
+                    Text("上下文: \(portfolioData.name)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -105,30 +129,24 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             List {
                 ForEach(viewModel.messages) { message in
-                    ChatMessageView(message: message)
-                        .id(message.id)
-                        .contextMenu {
-                            Button("复制") {
-                                viewModel.copyToClipboard(message)
-                            }
-                            
-                            if message.role == .assistant {
-                                Button("重新生成") {
-                                    viewModel.regenerateLastResponse()
-                                }
+                    ChatMessageView(
+                        message: message,
+                        isStreaming: viewModel.isLoading && 
+                                    message.id == viewModel.messages.last?.id &&
+                                    message.role == .assistant
+                    )
+                    .id(message.id)
+                    .contextMenu {
+                        Button("复制") {
+                            viewModel.copyToClipboard(message)
+                        }
+                        
+                        if message.role == .assistant {
+                            Button("重新生成") {
+                                viewModel.regenerateLastResponse()
                             }
                         }
-                }
-                
-                // Current streaming message (last assistant message while loading)
-                if viewModel.isLoading,
-                   let lastMessage = viewModel.messages.last,
-                   lastMessage.role == .assistant {
-                    ChatMessageView(
-                        message: lastMessage,
-                        isStreaming: true
-                    )
-                    .id("streaming")
+                    }
                 }
             }
             .listStyle(.plain)
@@ -150,18 +168,29 @@ struct ChatView: View {
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...5)
                     .onSubmit {
-                        if !viewModel.inputText.isEmpty {
+                        if !viewModel.inputText.isEmpty && !viewModel.isLoading {
                             viewModel.sendMessage()
                         }
                     }
+                    .disabled(viewModel.isLoading)
                 
-                Button(action: { viewModel.sendMessage() }) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(viewModel.inputText.isEmpty ? .secondary : Color.accentColor)
+                // Send or Cancel button based on loading state
+                if viewModel.isLoading {
+                    Button(action: { viewModel.cancelStreaming() }) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.red)
+                    }
+                    .help("停止生成")
+                } else {
+                    Button(action: { viewModel.sendMessage() }) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(viewModel.inputText.isEmpty ? .secondary : Color.accentColor)
+                    }
+                    .disabled(viewModel.inputText.isEmpty)
+                    .keyboardShortcut(.return, modifiers: [.command])
                 }
-                .disabled(viewModel.inputText.isEmpty || viewModel.isLoading)
-                .keyboardShortcut(.return, modifiers: [.command])
             }
             
             HStack {
@@ -189,16 +218,15 @@ struct ChatView: View {
                         Text("组合上下文")
                             .font(.headline)
                         
-                        if let portfolio = portfolio {
+                        if let portfolioData = portfolioData {
                             Text("当前对话已包含以下组合信息：")
                                 .font(.subheadline)
                             
                             VStack(alignment: .leading, spacing: 8) {
-                                LabeledContent("名称", value: portfolio.name ?? "-")
-                                LabeledContent("总市值", value: portfolio.totalValue.formattedAsCurrency())
-                                LabeledContent("风险偏好", value: portfolio.riskProfile.displayName)
-                                let positionCount = (portfolio.positions as? Set<Position>)?.count ?? 0
-                                LabeledContent("持仓数量", value: "\(positionCount)")
+                                LabeledContent("名称", value: portfolioData.name)
+                                LabeledContent("总市值", value: portfolioData.totalValue.formattedAsCurrency())
+                                LabeledContent("风险偏好", value: portfolioData.riskProfile.displayName)
+                                LabeledContent("持仓数量", value: "\(portfolioData.positionCount)")
                             }
                             .padding()
                             .background(Color(nsColor: .textBackgroundColor))
@@ -253,9 +281,8 @@ struct ChatView: View {
     
     private func scrollToBottom(proxy: ScrollViewProxy) {
         withAnimation {
-            if viewModel.isLoading {
-                proxy.scrollTo("streaming", anchor: .bottom)
-            } else if let lastId = viewModel.messages.last?.id {
+            // Always scroll to the last message
+            if let lastId = viewModel.messages.last?.id {
                 proxy.scrollTo(lastId, anchor: .bottom)
             }
         }
@@ -269,6 +296,9 @@ struct ChatView: View {
     let portfolio = Portfolio(context: context)
     portfolio.name = "示例组合"
     
-    return ChatView(portfolio: portfolio)
-        .frame(height: 600)
+    return ChatView(
+        viewModel: ChatViewModel(),
+        portfolio: portfolio
+    )
+    .frame(height: 600)
 }
