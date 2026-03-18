@@ -26,9 +26,9 @@ struct ContentView: View {
         } content: {
             // Content: Portfolio detail
             PortfolioDetailView(portfolio: listViewModel.selectedPortfolio)
-        } detail: {
+        }         detail: {
             // Detail: Chat/Analytics
-            ChatView(portfolio: listViewModel.selectedPortfolio)
+            ChatView(viewModel: chatViewModel, portfolio: listViewModel.selectedPortfolio)
         }
         .navigationSplitViewStyle(.balanced)
         .sheet(isPresented: $showingSettingsWindow) {
