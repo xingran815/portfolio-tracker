@@ -2,49 +2,105 @@
 //  ChatViewModel.swift
 //  portfolio_tracker
 //
-//  ViewModel for chat interface
+//  ViewModel for AI chat with portfolio context
 //
 
-import Foundation
+import SwiftUI
 import os.log
 
-/// ViewModel for managing chat conversations
+/// ViewModel for managing AI chat conversations
 @MainActor
 @Observable
 final class ChatViewModel {
     
     // MARK: - Properties
     
+    /// Chat messages
     var messages: [ChatMessage] = []
-    var inputText: String = ""
-    var isLoading: Bool = false
+    
+    /// Current user input
+    var inputText = ""
+    
+    /// Whether AI is generating response
+    var isLoading = false
+    
+    /// Error message
     var errorMessage: String?
     
-    private let llmService: any LLMServiceProtocol
-    private let portfolio: Portfolio?
+    /// Whether to include portfolio context with messages
+    var includePortfolioContext = true
+    
+    /// Current portfolio for context (CoreData object)
+    private var portfolio: Portfolio?
+    
+    /// View-safe portfolio data
+    private(set) var portfolioData: PortfolioViewData?
+    
+    /// Chat history persistence key
+    private var chatHistoryKey: String {
+        if let portfolioId = portfolio?.id?.uuidString {
+            return "chat_history_\(portfolioId)"
+        }
+        return "chat_history_global"
+    }
+    
+    // MARK: - Dependencies
+    
+    private var llmService: any LLMServiceProtocol
     private var currentTask: Task<Void, Never>?
+    private var currentAssistantMessageId: UUID?
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "ChatViewModel")
     
-    // Track current assistant message ID for safe updates
-    private var currentAssistantMessageId: UUID?
+    /// Whether the service is using real API or mock
+    var isUsingRealAPI: Bool {
+        !(llmService is MockLLMService)
+    }
     
     // MARK: - Initialization
     
     init(
-        llmService: any LLMServiceProtocol = KimiService(),
+        llmService: (any LLMServiceProtocol)? = nil,
         portfolio: Portfolio? = nil
     ) {
-        self.llmService = llmService
+        self.llmService = llmService ?? MockLLMService()
         self.portfolio = portfolio
+        loadChatHistory()
+        addWelcomeMessageIfNeeded()
+        
+        // Check for real API key and switch if available
+        Task {
+            await autoSwitchToRealServiceIfAvailable()
+        }
     }
     
     // MARK: - Public Methods
     
-    /// Sends a message and receives streaming response
-    func sendMessage() {
-        guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
+    /// Sets the current portfolio for context
+    /// - Parameter portfolio: Portfolio to include in context
+    func setPortfolio(_ portfolio: Portfolio?) {
+        // Save current chat history if portfolio is changing
+        if self.portfolio?.id != portfolio?.id {
+            saveChatHistory()
+            self.portfolio = portfolio
+            self.portfolioData = portfolio.map { PortfolioViewData.from($0) }
+            loadChatHistory()
         }
+    }
+    
+    /// Sets the current portfolio using view data
+    /// - Parameter portfolioData: Portfolio view data
+    func setPortfolio(_ portfolioData: PortfolioViewData?) {
+        // Save current chat history if portfolio is changing
+        if self.portfolioData?.id != portfolioData?.id {
+            saveChatHistory()
+            self.portfolioData = portfolioData
+            loadChatHistory()
+        }
+    }
+    
+    /// Sends user message and streams AI response
+    func sendMessage() {
+        guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
         let userMessage = ChatMessage(role: .user, content: inputText)
         messages.append(userMessage)
@@ -66,12 +122,44 @@ final class ChatViewModel {
         isLoading = false
     }
     
-    /// Clears the conversation history
+    /// Clears chat history
     func clearConversation() {
         cancelStreaming()
         messages.removeAll()
         errorMessage = nil
         currentAssistantMessageId = nil
+        Task {
+            await llmService.clearHistory()
+        }
+        addWelcomeMessageIfNeeded()
+        saveChatHistory()
+        logger.info("Cleared chat history")
+    }
+    
+    /// Regenerates the last AI response
+    func regenerateLastResponse() {
+        guard let lastUserMessage = messages.last(where: { $0.role == .user }) else { return }
+        
+        // Remove the last assistant message if exists
+        if let lastIndex = messages.indices.last,
+           messages[lastIndex].role == .assistant {
+            messages.remove(at: lastIndex)
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        currentAssistantMessageId = nil
+        
+        currentTask = Task {
+            await streamResponse(to: lastUserMessage.content)
+        }
+    }
+    
+    /// Copies message content to clipboard
+    /// - Parameter message: Message to copy
+    func copyToClipboard(_ message: ChatMessage) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(message.content, forType: .string)
     }
     
     /// Checks if LLM is configured
@@ -79,11 +167,55 @@ final class ChatViewModel {
         await llmService.validateAPIKey()
     }
     
+    /// Automatically switches to real Kimi API service if API key is available
+    /// Called during initialization
+    private func autoSwitchToRealServiceIfAvailable() async {
+        let apiKeyManager = APIKeyManager.shared
+        if await apiKeyManager.hasKey(for: .kimi) {
+            llmService = KimiService(apiKeyManager: apiKeyManager)
+            logger.info("Auto-switched to real Kimi API service on initialization")
+        }
+    }
+    
+    /// Switches to real Kimi API service if API key is available
+    /// Call this when API key is added in settings
+    func switchToRealService() async {
+        guard !isUsingRealAPI else { return }
+        
+        let apiKeyManager = APIKeyManager.shared
+        if await apiKeyManager.hasKey(for: .kimi) {
+            llmService = KimiService(apiKeyManager: apiKeyManager)
+            logger.info("Switched to real Kimi API service")
+        }
+    }
+    
+    /// Switches back to mock service (for testing)
+    func switchToMockService() {
+        llmService = MockLLMService()
+        logger.info("Switched to mock service")
+    }
+    
+    /// Saves chat history to UserDefaults
+    func saveChatHistory() {
+        do {
+            let data = try JSONEncoder().encode(messages)
+            UserDefaults.standard.set(data, forKey: chatHistoryKey)
+            logger.debug("Saved chat history for \(self.chatHistoryKey)")
+        } catch {
+            logger.error("Failed to save chat history: \(error.localizedDescription)")
+        }
+    }
+    
     // MARK: - Private Methods
     
     private func streamResponse(to message: String) async {
         // Build context from portfolio
-        let context = buildContext()
+        let context = includePortfolioContext ? buildContext() : ConversationContext(
+            portfolioName: nil,
+            positions: [],
+            riskProfile: nil,
+            targetAllocation: nil
+        )
         
         // Create assistant message placeholder with unique ID
         let assistantMessage = ChatMessage(role: .assistant, content: "")
@@ -125,6 +257,9 @@ final class ChatViewModel {
         logger.info("Received response: \(fullResponse.prefix(100))...")
         currentAssistantMessageId = nil
         isLoading = false
+        
+        // Save history after each complete exchange
+        saveChatHistory()
     }
     
     /// Safely updates assistant message by ID (prevents race conditions)
@@ -146,8 +281,58 @@ final class ChatViewModel {
         messages.removeAll { $0.id == id }
     }
     
+    private func loadChatHistory() {
+        guard let data = UserDefaults.standard.data(forKey: chatHistoryKey) else {
+            messages = []
+            addWelcomeMessageIfNeeded()
+            return
+        }
+        
+        do {
+            messages = try JSONDecoder().decode([ChatMessage].self, from: data)
+            if messages.isEmpty {
+                addWelcomeMessageIfNeeded()
+            }
+            logger.debug("Loaded chat history for \(self.chatHistoryKey)")
+        } catch {
+            logger.error("Failed to load chat history: \(error.localizedDescription)")
+            messages = []
+            addWelcomeMessageIfNeeded()
+        }
+    }
+    
+    private func addWelcomeMessageIfNeeded() {
+        guard messages.isEmpty else { return }
+        
+        let welcomeMessage = ChatMessage(
+            role: .assistant,
+            content: "Hello! I'm your AI portfolio assistant. I can help you analyze your portfolio, suggest rebalancing strategies, and answer investment questions.\n\nHow can I help you today?"
+        )
+        messages.append(welcomeMessage)
+    }
+    
     private func buildContext() -> ConversationContext {
-        guard let portfolio = portfolio else {
+        // Prefer CoreData object if available for full context
+        if let portfolio = portfolio {
+            let positionSet = portfolio.positions as? Set<Position> ?? []
+            let positions = positionSet.map { position -> ConversationContext.PositionSummary in
+                ConversationContext.PositionSummary(
+                    symbol: position.symbol ?? "Unknown",
+                    shares: position.shares,
+                    currentValue: position.currentPrice * position.shares
+                )
+            }
+            
+            return ConversationContext(
+                portfolioName: portfolio.name,
+                positions: positions,
+                riskProfile: portfolio.riskProfile.displayName,
+                targetAllocation: portfolio.targetAllocation
+            )
+        }
+        
+        // Fallback to view data
+        guard let portfolioData = portfolioData else {
             return ConversationContext(
                 portfolioName: nil,
                 positions: [],
@@ -156,30 +341,11 @@ final class ChatViewModel {
             )
         }
         
-        // Get positions from NSSet
-        let positionSet = portfolio.positions as? Set<Position> ?? []
-        let positions = positionSet.map { position -> ConversationContext.PositionSummary in
-            ConversationContext.PositionSummary(
-                symbol: position.symbol ?? "Unknown",
-                shares: position.shares,
-                currentValue: position.currentPrice * position.shares
-            )
-        }
-        
         return ConversationContext(
-            portfolioName: portfolio.name,
-            positions: positions,
-            riskProfile: portfolio.riskProfile.displayName,
-            targetAllocation: portfolio.targetAllocation
+            portfolioName: portfolioData.name,
+            positions: [], // View data doesn't include individual positions
+            riskProfile: portfolioData.riskProfile.displayName,
+            targetAllocation: portfolioData.targetAllocation
         )
-    }
-}
-
-// MARK: - Factory Extension
-
-extension ChatViewModel {
-    /// Creates a ChatViewModel with mock LLM service for testing
-    static func mock(portfolio: Portfolio? = nil) -> ChatViewModel {
-        ChatViewModel(llmService: MockLLMService(), portfolio: portfolio)
     }
 }

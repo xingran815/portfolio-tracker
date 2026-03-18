@@ -120,6 +120,9 @@ protocol LLMServiceProtocol: Actor {
     /// Validates the API key by making a test request
     /// - Returns: Detailed validation result
     func validateAPIKey() async -> APIKeyValidationResult
+    
+    /// Clears conversation history
+    func clearHistory()
 }
 
 /// Configuration for LLM requests
@@ -144,3 +147,5 @@ struct LLMConfiguration: Sendable {
         maxContextLength: 8000
     )
 }
+
+
