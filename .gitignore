@@ -1,0 +1,141 @@
+# Xcode
+# User data
+*.xcuserdata
+*.xcuserstate
+*.xcuserdatad
+project.xcworkspace/xcuserdata/
+*.xccheckout
+*.moved-aside
+*.xcscmblueprint
+*.xcscheme
+*.xcscheme/xcschememanagement.plist
+
+# Build generated
+build/
+DerivedData/
+*.build/
+*.app
+dSYM.zip
+dSYM/
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+.build/
+Package.resolved
+.swiftpm/
+
+# CocoaPods
+Pods/
+*.xcworkspace
+!default.xcworkspace
+
+# Carthage
+Carthage/Build/
+Carthage/Checkouts/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code Injection
+injected_bundle.swift
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# ============================================
+# SECURITY - NEVER COMMIT THESE
+# ============================================
+
+# API Keys and Secrets
+*.xcconfig
+config.plist
+Secrets.swift
+APIKeys.swift
+Keys.swift
+*.key
+*.pem
+*.p12
+*.mobileprovision
+
+# Environment files - NEVER COMMIT
+.env
+.env.local
+.env.*.local
+*.env
+secrets*
+!Secrets.example.swift
+
+# CoreData store (user data)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+
+# Archive files
+*.ipa
+*.pkg
+
+# Personal portfolio exports
+*.csv
+*.json
+*.md
+!README.md
+!CONTRIBUTING.md
+!CHANGELOG.md
+!KIMI_API_REFERENCE.md
+!LICENSE*
+!Examples/*.md
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
+
+# Node (if using any JS tools)
+node_modules/
+npm-debug.log*
+
+# Python (if using any scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Planning docs (keep at parent level only)
+../AGENTS.md
+../PROGRAMMING_PLAN.md
+../RESEARCH_REPORT.md
+../CODING.md

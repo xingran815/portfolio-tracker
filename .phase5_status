@@ -1,0 +1,131 @@
+# Phase 5: Rebalancing Engine
+
+This branch implements Phase 5 - Portfolio drift analysis and rebalancing recommendations.
+
+See issue #4 for details.
+
+## Status: ✅ COMPLETE
+
+## Deliverables
+
+- [x] DriftAnalyzer.swift - Calculate portfolio drift from target allocation
+- [x] RebalancePlan.swift - Plan model with buy/sell orders
+- [x] RebalancingEngine.swift - Generate rebalance recommendations
+- [x] PortfolioSnapshot.swift - Thread-safe portfolio data snapshot
+- [x] test-rebalancing.swift - Test script (31 tests)
+
+## Critical Fixes Applied
+
+### 1. Actor Isolation (Critical #1)
+- Created `PortfolioSnapshot` for safe cross-actor data transfer
+- `RebalancingEngine` now accepts `PortfolioSnapshot` instead of `Portfolio`
+- Eliminates MainActor isolation violations
+
+### 2. Floating-Point Constants (Critical #2)
+- Created `FinancialConstants` and `DriftAnalysisConstants` enums
+- Defined `epsilon`, `minWeight`, `normalizationTolerance`
+- Proper constants instead of magic numbers
+
+### 3. Division by Zero (Critical #3)
+- `adjustmentValue` now returns `Double?` (optional)
+- Proper guard clauses with `minWeight` epsilon
+- Explicit handling for zero-weight positions
+
+## High Priority Fixes Applied
+
+### 4. Input Validation (High #4)
+- `PortfolioSnapshot.isValid` property
+- `validationErrors` array with detailed messages
+- `OrderFactory` with comprehensive validation
+- Price freshness checking
+
+### 5. Filtered Order Reporting (High #5)
+- `FilteredOrderInfo` struct for tracking skipped orders
+- `filteredReasons` in `RebalancePlan`
+- `hasFilteredOrders` property
+- Shown in plan summary
+
+### 6. Plan Generation Clarity (High #6)
+- Clear error cases: `noSignificantDrift`, `allOrdersFiltered`
+- Detailed error descriptions and recovery suggestions
+- Proper validation before plan creation
+
+## Medium Priority Fixes Applied
+
+### 7. Protocol-Based Strategies (Medium #7)
+- `RebalancingStrategy` protocol
+- `ThresholdBasedStrategy` implementation
+- `CashFlowAwareStrategy` implementation
+- `TaxOptimizedStrategy` implementation
+- Configurable via `RebalancingConfiguration`
+
+### 8. Persistence Ready (Medium #8)
+- `Sendable` conformance throughout
+- Immutable snapshot pattern
+- Plan status tracking (draft/executed/cancelled)
+
+### 9. Error Recovery (Medium #9)
+- `recoverySuggestion` on errors
+- Detailed error contexts
+- Validation at multiple stages
+
+## Features
+
+### Drift Analysis
+- 5% threshold detection (configurable)
+- Per-position and total drift metrics
+- Missing position detection
+- Allocation normalization
+
+### Rebalancing Strategies
+- Threshold-based (default)
+- Cash-flow aware
+- Tax-optimized (loss harvesting)
+
+### Plan Generation
+- Buy/sell recommendations
+- Order prioritization
+- Cash validation
+- Tax impact estimation
+
+### Scheduling
+- Next rebalancing date calculation
+- Overdue detection
+- Monthly/quarterly frequency
+
+## Test Results
+
+```
+Results: 31 passed, 0 failed
+```
+
+Tests cover:
+- Drift calculations
+- Threshold detection
+- Allocation normalization
+- Order sizing
+- Cash flow
+- Priority ordering
+- Schedule calculations
+- Error handling
+- Edge cases
+- Tax optimization
+
+## Files
+
+- Services/Rebalancing/PortfolioSnapshot.swift (110 lines)
+- Services/Rebalancing/DriftAnalyzer.swift (275 lines)
+- Services/Rebalancing/RebalancePlan.swift (235 lines)
+- Services/Rebalancing/RebalancingEngine.swift (430 lines)
+- Scripts/test-rebalancing.swift (200 lines)
+
+Total: ~1,250 lines
+
+## Breaking Changes
+
+- Engine now requires `PortfolioSnapshot` instead of `Portfolio`
+- Create snapshot on MainActor before calling engine:
+  ```swift
+  let snapshot = await MainActor.run { PortfolioSnapshot.from(portfolio) }
+  let plan = try await engine.generatePlan(from: snapshot, availableCash: cash)
+  ```
