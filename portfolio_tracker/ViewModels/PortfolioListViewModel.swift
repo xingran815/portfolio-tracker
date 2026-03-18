@@ -91,6 +91,63 @@ final class PortfolioListViewModel {
         }
     }
     
+    /// Creates a new portfolio from parsed configuration
+    /// - Parameter config: Portfolio configuration from MDParser or CreatePortfolioView
+    func createFromConfig(_ config: PortfolioConfig) {
+        guard !config.name.isEmpty else {
+            showError(message: "Portfolio name cannot be empty")
+            return
+        }
+        
+        // Check for duplicate name
+        if portfolios.contains(where: { $0.name?.lowercased() == config.name.lowercased() }) {
+            showError(message: "A portfolio with this name already exists")
+            return
+        }
+        
+        // Create portfolio with config data
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = config.name
+        portfolio.riskProfileRaw = (config.riskProfile ?? .moderate).rawValue
+        portfolio.expectedReturn = config.expectedReturn ?? 0.08
+        portfolio.maxDrawdown = config.maxDrawdown ?? 0.15
+        portfolio.rebalancingFrequencyRaw = (config.rebalancingFrequency ?? .quarterly).rawValue
+        portfolio.createdAt = Date()
+        portfolio.updatedAt = Date()
+        
+        // Set target allocation if provided
+        if let allocation = config.targetAllocation, !allocation.isEmpty {
+            portfolio.targetAllocation = allocation
+        }
+        
+        // Create positions if provided
+        for positionConfig in config.positions {
+            let position = Position(context: viewContext)
+            position.id = UUID()
+            position.symbol = positionConfig.symbol
+            position.name = positionConfig.name
+            position.assetTypeRaw = (positionConfig.assetType ?? .stock).rawValue
+            position.marketRaw = (positionConfig.market ?? .us).rawValue
+            position.shares = positionConfig.shares
+            position.costBasis = positionConfig.costBasis ?? 0
+            position.currentPrice = 0
+            position.currency = (positionConfig.market ?? .us).currency
+            position.lastUpdated = nil
+            position.portfolio = portfolio
+        }
+        
+        do {
+            try viewContext.save()
+            portfolios.append(portfolio)
+            selectedPortfolioId = portfolio.id
+            logger.info("Created portfolio from config: \(config.name) with \(config.positions.count) positions")
+        } catch {
+            logger.error("Failed to save portfolio: \(error.localizedDescription)")
+            showError(message: "Failed to create portfolio")
+        }
+    }
+    
     /// Deletes a portfolio
     /// - Parameter portfolio: Portfolio to delete
     func deletePortfolio(_ portfolio: Portfolio) {
