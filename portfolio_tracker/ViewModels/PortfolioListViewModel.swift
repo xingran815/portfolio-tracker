@@ -110,6 +110,7 @@ final class PortfolioListViewModel {
         portfolio.id = UUID()
         portfolio.name = config.name
         portfolio.riskProfileRaw = (config.riskProfile ?? .moderate).rawValue
+        portfolio.currencyRaw = (config.currency ?? .cny).rawValue
         portfolio.expectedReturn = config.expectedReturn ?? 0.08
         portfolio.maxDrawdown = config.maxDrawdown ?? 0.15
         portfolio.rebalancingFrequencyRaw = (config.rebalancingFrequency ?? .quarterly).rawValue

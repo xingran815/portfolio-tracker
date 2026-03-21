@@ -15,6 +15,9 @@ struct PortfolioConfig: Sendable {
     /// Risk profile (optional, defaults to moderate)
     let riskProfile: RiskProfile?
     
+    /// Portfolio base currency (optional, defaults to CNY)
+    let currency: Currency?
+    
     /// Expected annual return as decimal (e.g., 0.08 for 8%)
     let expectedReturn: Double?
     

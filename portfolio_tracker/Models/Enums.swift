@@ -22,6 +22,42 @@ public enum RiskProfile: String, CaseIterable, Codable, Sendable {
     }
 }
 
+/// Currency for portfolio display
+public enum Currency: String, CaseIterable, Codable, Sendable {
+    case cny = "CNY"
+    case usd = "USD"
+    case eur = "EUR"
+    case hkd = "HKD"
+    case gbp = "GBP"
+    case jpy = "JPY"
+    
+    public var displayName: String {
+        switch self {
+        case .cny: return "人民币 (¥)"
+        case .usd: return "美元 ($)"
+        case .eur: return "欧元 (€)"
+        case .hkd: return "港币 (HK$)"
+        case .gbp: return "英镑 (£)"
+        case .jpy: return "日元 (¥)"
+        }
+    }
+    
+    public var symbol: String {
+        switch self {
+        case .cny: return "¥"
+        case .usd: return "$"
+        case .eur: return "€"
+        case .hkd: return "HK$"
+        case .gbp: return "£"
+        case .jpy: return "¥"
+        }
+    }
+    
+    public var code: String {
+        return self.rawValue
+    }
+}
+
 /// Type of financial asset
 public enum AssetType: String, CaseIterable, Codable, Sendable {
     case stock

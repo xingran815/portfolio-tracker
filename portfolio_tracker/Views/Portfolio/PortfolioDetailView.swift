@@ -14,6 +14,7 @@ struct PortfolioDetailView: View {
     @State private var showingAddPositionSheet = false
     @State private var showingRebalancingView = false
     @State private var showingSettingsWindow = false
+    @State private var showingEditSheet = false
     
     let portfolio: Portfolio?
     
@@ -41,6 +42,13 @@ struct PortfolioDetailView: View {
         .sheet(isPresented: $showingRebalancingView) {
             RebalancingView(portfolio: portfolio)
         }
+        .sheet(isPresented: $showingEditSheet) {
+            if let portfolio = portfolio {
+                EditPortfolioView(portfolio: portfolio) { _ in
+                    viewModel.setPortfolio(portfolio)
+                }
+            }
+        }
     }
     
     // MARK: - Subviews
@@ -64,6 +72,10 @@ struct PortfolioDetailView: View {
         .navigationTitle(portfolio.name ?? "投资组合")
         .toolbar {
             ToolbarItemGroup {
+                Button(action: { showingEditSheet = true }) {
+                    Label("编辑", systemImage: "pencil")
+                }
+                
                 Button(action: { showingRebalancingView = true }) {
                     Label("再平衡", systemImage: "arrow.left.arrow.right")
                 }
@@ -84,33 +96,37 @@ struct PortfolioDetailView: View {
     }
     
     private func summarySection(portfolio: Portfolio) -> some View {
-        LazyVGrid(columns: [
-            GridItem(.flexible()),
-            GridItem(.flexible()),
-            GridItem(.flexible())
-        ], spacing: 16) {
+        VStack(spacing: 12) {
             SummaryCard(
                 title: "总市值",
-                value: viewModel.totalValue.formattedAsCurrency(),
+                value: formatCurrency(viewModel.totalValue, currency: portfolio.currency),
                 icon: "dollarsign.circle.fill",
                 color: .blue
             )
             
             SummaryCard(
                 title: "总成本",
-                value: viewModel.totalCost.formattedAsCurrency(),
+                value: formatCurrency(viewModel.totalCost, currency: portfolio.currency),
                 icon: "bag.fill",
                 color: .gray
             )
             
             SummaryCard(
                 title: "盈亏",
-                value: viewModel.totalProfitLoss.formattedAsCurrency(),
+                value: formatCurrency(viewModel.totalProfitLoss, currency: portfolio.currency),
                 subtitle: viewModel.profitLossPercentage.formattedAsPercentage(),
                 icon: viewModel.totalProfitLoss >= 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill",
                 color: viewModel.totalProfitLoss >= 0 ? .green : .red
             )
         }
+    }
+    
+    private func formatCurrency(_ value: Double, currency: Currency) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency.code
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value)) ?? "\(currency.symbol)\(String(format: "%.2f", value))"
     }
     
     private var allocationSection: some View {

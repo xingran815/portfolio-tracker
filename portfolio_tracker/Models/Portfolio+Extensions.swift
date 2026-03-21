@@ -21,6 +21,16 @@ extension Portfolio {
         }
     }
     
+    /// Currency for portfolio display
+    public var currency: Currency {
+        get {
+            Currency(rawValue: currencyRaw ?? Currency.cny.rawValue) ?? .cny
+        }
+        set {
+            currencyRaw = newValue.rawValue
+        }
+    }
+    
     /// Rebalancing frequency as enum type
     public var rebalancingFrequency: RebalancingFrequency {
         get {
@@ -76,17 +86,20 @@ extension Portfolio {
     ///   - context: NSManagedObjectContext
     ///   - name: Portfolio name
     ///   - riskProfile: Risk tolerance
+    ///   - currency: Portfolio base currency (default: CNY)
     /// - Returns: New portfolio instance
     @discardableResult
     public static func create(
         in context: NSManagedObjectContext,
         name: String,
-        riskProfile: RiskProfile = .moderate
+        riskProfile: RiskProfile = .moderate,
+        currency: Currency = .cny
     ) -> Portfolio {
         let portfolio = Portfolio(context: context)
         portfolio.id = UUID()
         portfolio.name = name
         portfolio.riskProfileRaw = riskProfile.rawValue
+        portfolio.currencyRaw = currency.rawValue
         portfolio.expectedReturn = 0.08
         portfolio.maxDrawdown = 0.15
         portfolio.rebalancingFrequencyRaw = RebalancingFrequency.quarterly.rawValue

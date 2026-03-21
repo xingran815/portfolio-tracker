@@ -1,31 +1,58 @@
 //
-//  CreatePortfolioView.swift
+//  EditPortfolioView.swift
 //  portfolio_tracker
 //
-//  Multi-section form for creating a new portfolio
+//  Form for editing an existing portfolio
 //
 
 import SwiftUI
 
-struct CreatePortfolioView: View {
+struct EditPortfolioView: View {
     @Environment(\.dismiss) private var dismiss
     
-    @State private var name = ""
-    @State private var riskProfile: RiskProfile = .moderate
-    @State private var currency: Currency = .cny
+    @State private var name: String
+    @State private var riskProfile: RiskProfile
+    @State private var currency: Currency
     
     @State private var showSettings = false
-    @State private var expectedReturn = ""
-    @State private var maxDrawdown = ""
-    @State private var rebalancingFrequency: RebalancingFrequency = .quarterly
+    @State private var expectedReturn: String
+    @State private var maxDrawdown: String
+    @State private var rebalancingFrequency: RebalancingFrequency
     
     @State private var showTargetAllocation = false
-    @State private var targetAllocations: [TargetAllocationData] = []
+    @State private var targetAllocations: [TargetAllocationData]
     
-    @State private var showPositions = false
-    @State private var positions: [PositionEntryData] = []
+    let portfolio: Portfolio
+    var onSave: (Portfolio) -> Void
     
-    var onCreate: (PortfolioConfig) -> Void
+    init(portfolio: Portfolio, onSave: @escaping (Portfolio) -> Void) {
+        self.portfolio = portfolio
+        self.onSave = onSave
+        
+        _name = State(initialValue: portfolio.name ?? "")
+        _riskProfile = State(initialValue: portfolio.riskProfile)
+        _currency = State(initialValue: portfolio.currency)
+        
+        let returnPct = portfolio.expectedReturn * 100
+        _expectedReturn = State(initialValue: returnPct > 0 ? String(format: "%.1f", returnPct) : "")
+        
+        let drawdownPct = portfolio.maxDrawdown * 100
+        _maxDrawdown = State(initialValue: drawdownPct > 0 ? String(format: "%.1f", drawdownPct) : "")
+        
+        _rebalancingFrequency = State(initialValue: portfolio.rebalancingFrequency)
+        
+        let allocation = portfolio.targetAllocation
+        var allocations: [TargetAllocationData] = []
+        for (symbol, pct) in allocation {
+            let pctValue = pct > 1 ? pct * 100 : pct
+            var data = TargetAllocationData()
+            data.symbol = symbol
+            data.percentage = String(format: "%.1f", pctValue)
+            allocations.append(data)
+        }
+        _targetAllocations = State(initialValue: allocations)
+        _showTargetAllocation = State(initialValue: !allocations.isEmpty)
+    }
     
     var body: some View {
         NavigationStack {
@@ -33,24 +60,23 @@ struct CreatePortfolioView: View {
                 basicInfoSection
                 settingsSection
                 targetAllocationSection
-                positionsSection
             }
             .formStyle(.grouped)
-            .navigationTitle("新建投资组合")
+            .navigationTitle("编辑投资组合")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
                 }
                 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("创建") {
-                        createPortfolio()
+                    Button("保存") {
+                        savePortfolio()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
-        .frame(minWidth: 600, minHeight: 500)
+        .frame(minWidth: 500, minHeight: 450)
     }
     
     private var basicInfoSection: some View {
@@ -126,72 +152,24 @@ struct CreatePortfolioView: View {
         }
     }
     
-    private var positionsSection: some View {
-        DisclosureGroup("持仓 (可选)", isExpanded: $showPositions) {
-            if positions.isEmpty {
-                Text("暂无持仓")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            } else {
-                ForEach(positions.indices, id: \.self) { index in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("持仓 \(index + 1)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        
-                        PositionEntryRow(
-                            symbol: $positions[index].symbol,
-                            name: $positions[index].name,
-                            assetType: $positions[index].assetType,
-                            market: $positions[index].market,
-                            shares: $positions[index].shares,
-                            costBasis: $positions[index].costBasis,
-                            targetPercentage: .constant("")
-                        ) {
-                            positions.remove(at: index)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-            
-            Button(action: {
-                positions.append(PositionEntryData())
-            }) {
-                Label("添加持仓", systemImage: "plus.circle")
-            }
-            .buttonStyle(.plain)
-        }
-    }
-    
-    private func createPortfolio() {
-        let positionConfigs = positions.compactMap { $0.positionConfig }
+    private func savePortfolio() {
+        portfolio.name = name.trimmingCharacters(in: .whitespaces)
+        portfolio.riskProfile = riskProfile
+        portfolio.currency = currency
+        portfolio.expectedReturn = parsePercentage(expectedReturn) ?? 0.08
+        portfolio.maxDrawdown = parsePercentage(maxDrawdown) ?? 0.15
+        portfolio.rebalancingFrequency = rebalancingFrequency
+        portfolio.updatedAt = Date()
         
-        var allocation: [String: Double]? = nil
-        if !targetAllocations.isEmpty {
-            var dict: [String: Double] = [:]
-            for item in targetAllocations {
-                if let alloc = item.allocation {
-                    dict[alloc.0] = alloc.1
-                }
-            }
-            if !dict.isEmpty {
-                allocation = dict
+        var allocation: [String: Double] = [:]
+        for item in targetAllocations {
+            if let alloc = item.allocation {
+                allocation[alloc.0] = alloc.1
             }
         }
+        portfolio.targetAllocation = allocation
         
-        let config = PortfolioConfig(
-            name: name.trimmingCharacters(in: .whitespaces),
-            riskProfile: riskProfile,
-            currency: currency,
-            expectedReturn: parsePercentage(expectedReturn),
-            maxDrawdown: parsePercentage(maxDrawdown),
-            rebalancingFrequency: rebalancingFrequency,
-            targetAllocation: allocation,
-            positions: positionConfigs
-        )
-        
-        onCreate(config)
+        onSave(portfolio)
         dismiss()
     }
     
@@ -203,7 +181,11 @@ struct CreatePortfolioView: View {
 }
 
 #Preview {
-    CreatePortfolioView { config in
-        print("Created: \(config.name)")
+    let context = PersistenceController.preview.container.viewContext
+    let portfolio = Portfolio(context: context)
+    portfolio.name = "测试组合"
+    
+    return EditPortfolioView(portfolio: portfolio) { _ in
+        print("Saved")
     }
 }
