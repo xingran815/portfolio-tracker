@@ -11,10 +11,14 @@ import Charts
 /// Detail view showing portfolio positions and analytics
 struct PortfolioDetailView: View {
     @State private var viewModel = PortfolioDetailViewModel()
-    @State private var showingAddPositionSheet = false
     @State private var showingRebalancingView = false
     @State private var showingSettingsWindow = false
     @State private var showingEditSheet = false
+    @State private var showingPositionSheet = false
+    @State private var positionSheetMode: PositionManagementMode = .add
+    @State private var selectedPosition: Position?
+    @State private var showingDeleteConfirmation = false
+    @State private var positionToDelete: Position?
     
     let portfolio: Portfolio?
     
@@ -36,8 +40,12 @@ struct PortfolioDetailView: View {
                 emptyStateView
             }
         }
-        .sheet(isPresented: $showingAddPositionSheet) {
-            AddPositionSheet(viewModel: viewModel)
+        .sheet(isPresented: $showingPositionSheet) {
+            PositionManagementSheet(
+                mode: positionSheetMode,
+                viewModel: viewModel,
+                existingPosition: selectedPosition
+            )
         }
         .sheet(isPresented: $showingRebalancingView) {
             RebalancingView(portfolio: portfolio)
@@ -47,6 +55,18 @@ struct PortfolioDetailView: View {
                 EditPortfolioView(portfolio: portfolio) { _ in
                     viewModel.setPortfolio(portfolio)
                 }
+            }
+        }
+        .alert("确认删除", isPresented: $showingDeleteConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("删除", role: .destructive) {
+                if let position = positionToDelete {
+                    viewModel.deletePosition(position)
+                }
+            }
+        } message: {
+            if let position = positionToDelete {
+                Text("确定要删除持仓 \(position.symbol ?? "") 吗？此操作无法撤销。")
             }
         }
     }
@@ -81,7 +101,11 @@ struct PortfolioDetailView: View {
                 }
                 .disabled(viewModel.positions.isEmpty)
                 
-                Button(action: { showingAddPositionSheet = true }) {
+                Button(action: {
+                    positionSheetMode = .add
+                    selectedPosition = nil
+                    showingPositionSheet = true
+                }) {
                     Label("添加持仓", systemImage: "plus")
                 }
                 
@@ -236,6 +260,50 @@ struct PortfolioDetailView: View {
         } rows: {
             ForEach(viewModel.positions) { position in
                 TableRow(position)
+                    .contextMenu {
+                        Button {
+                            positionSheetMode = .buyMore
+                            selectedPosition = position
+                            showingPositionSheet = true
+                        } label: {
+                            Label("加仓", systemImage: "plus.circle")
+                        }
+                        
+                        Button {
+                            positionSheetMode = .sell
+                            selectedPosition = position
+                            showingPositionSheet = true
+                        } label: {
+                            Label("卖出", systemImage: "minus.circle")
+                        }
+                        
+                        Divider()
+                        
+                        Button {
+                            positionSheetMode = .edit
+                            selectedPosition = position
+                            showingPositionSheet = true
+                        } label: {
+                            Label("编辑", systemImage: "pencil")
+                        }
+                        
+                        Button {
+                            Task {
+                                await viewModel.updatePrice(for: position)
+                            }
+                        } label: {
+                            Label("更新价格", systemImage: "arrow.clockwise")
+                        }
+                        
+                        Divider()
+                        
+                        Button(role: .destructive) {
+                            positionToDelete = position
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                    }
             }
         }
         .frame(minHeight: 200)
@@ -288,92 +356,6 @@ struct SummaryCard: View {
         .padding()
         .background(color.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-// MARK: - Add Position Sheet
-
-struct AddPositionSheet: View {
-    var viewModel: PortfolioDetailViewModel
-    @Environment(\.dismiss) private var dismiss
-    
-    @State private var symbol = ""
-    @State private var name = ""
-    @State private var assetType: AssetType = .stock
-    @State private var market: Market = .us
-    @State private var shares = ""
-    @State private var costBasis = ""
-    
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("基本信息") {
-                    TextField("代码 (如 AAPL)", text: $symbol)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    TextField("名称", text: $name)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    Picker("资产类型", selection: $assetType) {
-                        ForEach(AssetType.allCases, id: \.self) { type in
-                            Text(type.displayName).tag(type)
-                        }
-                    }
-                    
-                    Picker("市场", selection: $market) {
-                        ForEach(Market.allCases, id: \.self) { m in
-                            Text(m.displayName).tag(m)
-                        }
-                    }
-                }
-                
-                Section("持仓") {
-                    TextField("数量", text: $shares)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    TextField("成本价", text: $costBasis)
-                        .textFieldStyle(.roundedBorder)
-                }
-            }
-            .formStyle(.grouped)
-            .navigationTitle("添加持仓")
-
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
-                }
-                
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("添加") {
-                        addPosition()
-                    }
-                    .disabled(!isValid)
-                }
-            }
-        }
-        .frame(minWidth: 400, minHeight: 350)
-    }
-    
-    private var isValid: Bool {
-        !symbol.isEmpty &&
-        !name.isEmpty &&
-        Double(shares) != nil &&
-        Double(costBasis) != nil
-    }
-    
-    private func addPosition() {
-        guard let sharesNum = Double(shares),
-              let costNum = Double(costBasis) else { return }
-        
-        viewModel.addPosition(
-            symbol: symbol,
-            name: name,
-            assetType: assetType,
-            market: market,
-            shares: sharesNum,
-            costBasis: costNum
-        )
-        dismiss()
     }
 }
 

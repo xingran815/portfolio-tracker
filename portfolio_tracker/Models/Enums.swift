@@ -144,3 +144,21 @@ public enum PlanStatus: String, CaseIterable, Codable, Sendable {
         }
     }
 }
+
+/// Position management errors
+public enum PositionError: LocalizedError, Sendable {
+    case insufficientShares(available: Double, requested: Double)
+    case positionNotFound
+    case invalidInput(String)
+    
+    public var errorDescription: String? {
+        switch self {
+        case .insufficientShares(let available, let requested):
+            return "持仓不足：可用 \(String(format: "%.2f", available)) 股，请求卖出 \(String(format: "%.2f", requested)) 股"
+        case .positionNotFound:
+            return "未找到该持仓"
+        case .invalidInput(let message):
+            return "输入无效：\(message)"
+        }
+    }
+}
