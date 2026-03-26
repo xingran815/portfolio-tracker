@@ -226,6 +226,30 @@ struct PortfolioDetailView: View {
             }
             .width(60)
             
+            TableColumn("市值") { position in
+                Text((position.currentValue ?? 0).formattedAsCurrency(currencyCode: position.currencyEnum.code))
+                    .monospacedDigit()
+            }
+            .width(100)
+            
+            TableColumn("盈亏") { position in
+                HStack(spacing: 2) {
+                    let profitLoss = position.profitLoss ?? 0
+                    Text(profitLoss.formattedAsCurrency(currencyCode: position.currencyEnum.code))
+                        .monospacedDigit()
+                }
+                .font(.caption)
+                .foregroundStyle((position.profitLoss ?? 0) >= 0 ? .green : .red)
+            }
+            .width(100)
+            
+            TableColumn("盈亏%") { position in
+                Text((position.profitLossPercentage ?? 0).formattedAsPercentage())
+                    .monospacedDigit()
+                    .foregroundStyle((position.profitLoss ?? 0) >= 0 ? .green : .red)
+            }
+            .width(70)
+            
             TableColumn("数量") { position in
                 Text(String(format: "%.2f", position.shares))
                     .monospacedDigit()
@@ -233,28 +257,14 @@ struct PortfolioDetailView: View {
             .width(80)
             
             TableColumn("现价") { position in
-                Text(position.currentPrice.formattedAsCurrency())
+                Text(position.currentPrice.formattedAsCurrency(currencyCode: position.currencyEnum.code))
                     .monospacedDigit()
             }
             .width(100)
             
-            TableColumn("市值") { position in
-                Text((position.currentValue ?? 0).formattedAsCurrency())
+            TableColumn("总投入") { position in
+                Text(position.totalCost.formattedAsCurrency(currencyCode: position.currencyEnum.code))
                     .monospacedDigit()
-            }
-            .width(100)
-            
-            TableColumn("权重") { position in
-                Text((position.weightInPortfolio ?? 0).formattedAsPercentage())
-                    .monospacedDigit()
-            }
-            .width(70)
-            
-            TableColumn("盈亏") { position in
-                PriceChangeLabel(
-                    value: position.profitLoss ?? 0,
-                    percentage: position.profitLossPercentage ?? 0
-                )
             }
             .width(100)
         } rows: {

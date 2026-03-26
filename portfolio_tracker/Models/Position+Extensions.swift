@@ -35,6 +35,16 @@ extension Position {
         }
     }
     
+    /// Currency as enum
+    public var currencyEnum: Currency {
+        get {
+            Currency(rawValue: currency ?? Currency.cny.rawValue) ?? .cny
+        }
+        set {
+            currency = newValue.rawValue
+        }
+    }
+    
     /// Current market value (price * shares)
     public var currentValue: Double? {
         guard currentPrice > 0 else { return nil }
@@ -90,6 +100,7 @@ extension Position {
         market: Market,
         shares: Double,
         costBasis: Double,
+        currency: Currency? = nil,
         portfolio: Portfolio? = nil
     ) -> Position {
         let position = Position(context: context)
@@ -101,7 +112,7 @@ extension Position {
         position.shares = shares
         position.costBasis = costBasis
         position.currentPrice = 0
-        position.currency = market.currency
+        position.currency = currency?.rawValue ?? market.currency
         position.lastUpdated = nil
         position.portfolio = portfolio
         return position

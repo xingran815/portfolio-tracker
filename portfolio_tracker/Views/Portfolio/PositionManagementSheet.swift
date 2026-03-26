@@ -48,6 +48,7 @@ struct PositionManagementSheet: View {
     @State private var name = ""
     @State private var assetType: AssetType = .fund
     @State private var market: Market = .cn
+    @State private var currency: Currency = .cny
     @State private var entryMode: EntryMode = .quickImport
     @State private var amount = ""
     @State private var shares = ""
@@ -112,6 +113,7 @@ struct PositionManagementSheet: View {
             _name = State(initialValue: position.name ?? "")
             _assetType = State(initialValue: position.assetType)
             _market = State(initialValue: position.market)
+            _currency = State(initialValue: position.currencyEnum)
             if mode == .edit {
                 _shares = State(initialValue: String(format: "%.2f", position.shares))
                 _price = State(initialValue: String(format: "%.2f", position.costBasis))
@@ -180,6 +182,13 @@ struct PositionManagementSheet: View {
                     }
                 }
                 .disabled(mode == .buyMore || mode == .sell)
+                
+                Picker("币种", selection: $currency) {
+                    ForEach(Currency.allCases, id: \.self) { c in
+                        Text(c.displayName).tag(c)
+                    }
+                }
+                .disabled(mode == .buyMore || mode == .sell)
             }
         }
     }
@@ -230,14 +239,14 @@ struct PositionManagementSheet: View {
                 HStack {
                     TextField("总投入金额", text: $totalInvested)
                         .textFieldStyle(.roundedBorder)
-                    Text(market.currencySymbol)
+                    Text(currency.symbol)
                         .foregroundStyle(.secondary)
                 }
                 
                 HStack {
                     TextField("当前市值", text: $currentValue)
                         .textFieldStyle(.roundedBorder)
-                    Text(market.currencySymbol)
+                    Text(currency.symbol)
                         .foregroundStyle(.secondary)
                 }
                 
@@ -267,7 +276,7 @@ struct PositionManagementSheet: View {
                     TextField("投入金额", text: $amount)
                         .textFieldStyle(.roundedBorder)
                     
-                    Text(market.currencySymbol)
+                    Text(currency.symbol)
                         .foregroundStyle(.secondary)
                 }
                 
@@ -394,6 +403,7 @@ struct PositionManagementSheet: View {
                     market: market,
                     shares: sharesNum,
                     costBasis: priceNum,
+                    currency: currency,
                     fees: feesNum
                 )
                 

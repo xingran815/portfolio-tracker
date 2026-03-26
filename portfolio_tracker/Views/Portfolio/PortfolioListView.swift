@@ -142,7 +142,7 @@ struct PortfolioRowView: View {
             }
             
             HStack {
-                Text(portfolio.totalValue.formattedAsCurrency())
+                Text(portfolio.totalValue.formattedAsCurrency(currencyCode: portfolio.currency.code))
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                 
@@ -150,7 +150,8 @@ struct PortfolioRowView: View {
                 
                 PriceChangeLabel(
                     value: portfolio.totalProfitLoss,
-                    percentage: portfolio.profitLossPercentage
+                    percentage: portfolio.profitLossPercentage,
+                    currencyCode: portfolio.currency.code
                 )
             }
             
