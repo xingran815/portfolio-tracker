@@ -62,6 +62,11 @@ final class PortfolioListViewModel {
         }
     }
     
+    /// Refreshes portfolios list
+    func refreshPortfolios() {
+        loadPortfolios()
+    }
+    
     /// Creates a new portfolio
     /// - Parameters:
     ///   - name: Portfolio name

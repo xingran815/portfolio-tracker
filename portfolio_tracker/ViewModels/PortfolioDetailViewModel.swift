@@ -82,12 +82,10 @@ final class PortfolioDetailViewModel {
         
         let request = Position.fetchRequest()
         request.predicate = NSPredicate(format: "portfolio == %@ AND shares > 0", portfolio)
-        request.sortDescriptors = [
-            NSSortDescriptor(key: "currentPrice", ascending: false)
-        ]
         
         do {
-            self.positions = try viewContext.fetch(request)
+            let fetchedPositions = try viewContext.fetch(request)
+            self.positions = fetchedPositions.sorted { ($0.currentValue ?? 0) > ($1.currentValue ?? 0) }
             logger.debug("Loaded \(self.positions.count) positions")
         } catch {
             logger.error("Failed to fetch positions: \(error)")

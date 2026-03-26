@@ -84,7 +84,7 @@ struct SettingsWindow: View {
             }
             
             Section("缓存") {
-                LabeledContent("价格缓存", value: "5 分钟")
+                LabeledContent("价格缓存", value: "1 天")
                 
                 Button("清除缓存") {
                     // Clear price cache

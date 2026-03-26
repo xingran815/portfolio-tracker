@@ -14,6 +14,9 @@ struct PortfolioListView: View {
     @State private var showingImportPicker = false
     @State private var importError: String?
     @State private var showingImportError = false
+    @State private var portfolioToEdit: Portfolio?
+    @State private var portfolioToDelete: Portfolio?
+    @State private var showingDeleteConfirmation = false
     
     init(viewModel: PortfolioListViewModel? = nil) {
         _viewModel = State(initialValue: viewModel ?? PortfolioListViewModel())
@@ -27,9 +30,22 @@ struct PortfolioListView: View {
                         PortfolioRowView(portfolio: portfolio)
                     }
                     .tag(portfolio.id)
-                }
-                .onDelete { indexSet in
-                    viewModel.deletePortfolios(at: indexSet)
+                    .contextMenu {
+                        Button {
+                            portfolioToEdit = portfolio
+                        } label: {
+                            Label("编辑", systemImage: "pencil")
+                        }
+                        
+                        Divider()
+                        
+                        Button(role: .destructive) {
+                            portfolioToDelete = portfolio
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                    }
                 }
             }
         }
@@ -52,6 +68,11 @@ struct PortfolioListView: View {
                 viewModel.createFromConfig(config)
             }
         }
+        .sheet(item: $portfolioToEdit) { portfolio in
+            EditPortfolioView(portfolio: portfolio) { _ in
+                viewModel.refreshPortfolios()
+            }
+        }
         .fileImporter(
             isPresented: $showingImportPicker,
             allowedContentTypes: [UTType(filenameExtension: "md")!, .plainText],
@@ -68,6 +89,18 @@ struct PortfolioListView: View {
             Button("确定", role: .cancel) {}
         } message: {
             Text(viewModel.errorMessage ?? "发生错误")
+        }
+        .alert("确认删除", isPresented: $showingDeleteConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("删除", role: .destructive) {
+                if let portfolio = portfolioToDelete {
+                    viewModel.deletePortfolio(portfolio)
+                }
+            }
+        } message: {
+            if let portfolio = portfolioToDelete {
+                Text("确定要删除投资组合 \"\(portfolio.name ?? "")\" 吗？此操作无法撤销。")
+            }
         }
         .overlay {
             if viewModel.portfolios.isEmpty {

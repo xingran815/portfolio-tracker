@@ -75,6 +75,57 @@ extension Portfolio {
         guard totalCost > 0 else { return 0 }
         return totalProfitLoss / totalCost
     }
+    
+    /// Total market value converted to target currency using provided rates
+    /// - Parameters:
+    ///   - targetCurrency: Target currency for conversion
+    ///   - rates: Exchange rates dictionary from base currency (e.g., USD)
+    /// - Returns: Total value in target currency
+    public func totalValueIn(currency targetCurrency: Currency, rates: [String: Double]) -> Double {
+        guard let positions = positions as? Set<Position> else { return 0 }
+        
+        return positions.reduce(0) { sum, position in
+            guard let value = position.currentValue else { return sum }
+            let positionCurrency = position.currencyEnum
+            
+            if positionCurrency == targetCurrency {
+                return sum + value
+            }
+            
+            guard let fromRate = rates[positionCurrency.code],
+                  let toRate = rates[targetCurrency.code] else {
+                return sum + value
+            }
+            
+            return sum + value * (toRate / fromRate)
+        }
+    }
+    
+    /// Total cost converted to target currency using provided rates
+    public func totalCostIn(currency targetCurrency: Currency, rates: [String: Double]) -> Double {
+        guard let positions = positions as? Set<Position> else { return 0 }
+        
+        return positions.reduce(0) { sum, position in
+            let cost = position.totalCost
+            let positionCurrency = position.currencyEnum
+            
+            if positionCurrency == targetCurrency {
+                return sum + cost
+            }
+            
+            guard let fromRate = rates[positionCurrency.code],
+                  let toRate = rates[targetCurrency.code] else {
+                return sum + cost
+            }
+            
+            return sum + cost * (toRate / fromRate)
+        }
+    }
+    
+    /// Total profit/loss converted to target currency
+    public func totalProfitLossIn(currency targetCurrency: Currency, rates: [String: Double]) -> Double {
+        totalValueIn(currency: targetCurrency, rates: rates) - totalCostIn(currency: targetCurrency, rates: rates)
+    }
 }
 
 // MARK: - Convenience Methods

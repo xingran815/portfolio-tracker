@@ -162,28 +162,26 @@ struct PositionManagementSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .disabled(mode == .buyMore || mode == .sell)
             
-            if entryMode != .quickImport {
-                Picker("资产类型", selection: $assetType) {
-                    ForEach(AssetType.allCases, id: \.self) { type in
-                        Text(type.displayName).tag(type)
-                    }
+            Picker("资产类型", selection: $assetType) {
+                ForEach(AssetType.allCases, id: \.self) { type in
+                    Text(type.displayName).tag(type)
                 }
-                .disabled(mode == .buyMore || mode == .sell)
-                
-                Picker("市场", selection: $market) {
-                    ForEach(Market.allCases, id: \.self) { m in
-                        Text(m.displayName).tag(m)
-                    }
-                }
-                .disabled(mode == .buyMore || mode == .sell)
-                
-                Picker("币种", selection: $currency) {
-                    ForEach(Currency.allCases, id: \.self) { c in
-                        Text(c.displayName).tag(c)
-                    }
-                }
-                .disabled(mode == .buyMore || mode == .sell)
             }
+            .disabled(mode == .buyMore || mode == .sell)
+            
+            Picker("市场", selection: $market) {
+                ForEach(Market.allCases, id: \.self) { m in
+                    Text(m.displayName).tag(m)
+                }
+            }
+            .disabled(mode == .buyMore || mode == .sell)
+            
+            Picker("币种", selection: $currency) {
+                ForEach(Currency.allCases, id: \.self) { c in
+                    Text(c.displayName).tag(c)
+                }
+            }
+            .disabled(mode == .buyMore || mode == .sell)
         }
     }
     
