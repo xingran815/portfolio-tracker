@@ -31,12 +31,6 @@ enum PositionManagementMode {
     }
 }
 
-enum EntryMode: String, CaseIterable {
-    case quickImport = "快捷导入"
-    case amount = "按金额"
-    case shares = "按份额"
-}
-
 struct PositionManagementSheet: View {
     @Environment(\.dismiss) private var dismiss
     
@@ -114,10 +108,10 @@ struct PositionManagementSheet: View {
             _assetType = State(initialValue: position.assetType)
             _market = State(initialValue: position.market)
             _currency = State(initialValue: position.currencyEnum)
+            _entryMode = State(initialValue: position.entryMode)
             if mode == .edit {
                 _shares = State(initialValue: String(format: "%.2f", position.shares))
                 _price = State(initialValue: String(format: "%.2f", position.costBasis))
-                _entryMode = State(initialValue: .shares)
             }
         }
     }
@@ -195,15 +189,15 @@ struct PositionManagementSheet: View {
     
     private var transactionSection: some View {
         Section(mode == .edit ? "持仓信息" : "交易信息") {
-            if mode == .add || mode == .buyMore {
+            if mode == .add || mode == .buyMore || mode == .edit {
                 Picker("录入方式", selection: $entryMode) {
                     ForEach(EntryMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue).tag(mode)
+                        Text(mode.displayName).tag(mode)
                     }
                 }
             }
             
-            if entryMode == .quickImport && (mode == .add || mode == .buyMore) {
+            if entryMode == .quickImport && (mode == .add || mode == .buyMore || mode == .edit) {
                 HStack {
                     TextField("基金代码", text: $symbol)
                         .textFieldStyle(.roundedBorder)
@@ -271,7 +265,7 @@ struct PositionManagementSheet: View {
                         .foregroundStyle(gainLoss >= 0 ? .green : .red)
                 }
                 
-            } else if entryMode == .amount && (mode == .add || mode == .buyMore) {
+            } else if entryMode == .amount && (mode == .add || mode == .buyMore || mode == .edit) {
                 HStack {
                     TextField("投入金额", text: $amount)
                         .textFieldStyle(.roundedBorder)
@@ -404,6 +398,7 @@ struct PositionManagementSheet: View {
                     shares: sharesNum,
                     costBasis: priceNum,
                     currency: currency,
+                    entryMode: entryMode,
                     fees: feesNum
                 )
                 
@@ -434,7 +429,8 @@ struct PositionManagementSheet: View {
                     assetType: assetType,
                     market: market,
                     shares: sharesNum,
-                    costBasis: priceNum
+                    costBasis: priceNum,
+                    entryMode: entryMode
                 )
             }
             dismiss()

@@ -8,15 +8,19 @@
 import SwiftUI
 import Charts
 
+struct PositionSheetItem: Identifiable {
+    let id = UUID()
+    let position: Position?
+    let mode: PositionManagementMode
+}
+
 /// Detail view showing portfolio positions and analytics
 struct PortfolioDetailView: View {
     @State private var viewModel = PortfolioDetailViewModel()
     @State private var showingRebalancingView = false
     @State private var showingSettingsWindow = false
     @State private var showingEditSheet = false
-    @State private var showingPositionSheet = false
-    @State private var positionSheetMode: PositionManagementMode = .add
-    @State private var selectedPosition: Position?
+    @State private var positionSheetItem: PositionSheetItem?
     @State private var showingDeleteConfirmation = false
     @State private var positionToDelete: Position?
     
@@ -40,11 +44,11 @@ struct PortfolioDetailView: View {
                 emptyStateView
             }
         }
-        .sheet(isPresented: $showingPositionSheet) {
+        .sheet(item: $positionSheetItem) { item in
             PositionManagementSheet(
-                mode: positionSheetMode,
+                mode: item.mode,
                 viewModel: viewModel,
-                existingPosition: selectedPosition
+                existingPosition: item.position
             )
         }
         .sheet(isPresented: $showingRebalancingView) {
@@ -102,9 +106,7 @@ struct PortfolioDetailView: View {
                 .disabled(viewModel.positions.isEmpty)
                 
                 Button(action: {
-                    positionSheetMode = .add
-                    selectedPosition = nil
-                    showingPositionSheet = true
+                    positionSheetItem = PositionSheetItem(position: nil, mode: .add)
                 }) {
                     Label("添加持仓", systemImage: "plus")
                 }
@@ -272,17 +274,13 @@ struct PortfolioDetailView: View {
                 TableRow(position)
                     .contextMenu {
                         Button {
-                            positionSheetMode = .buyMore
-                            selectedPosition = position
-                            showingPositionSheet = true
+                            positionSheetItem = PositionSheetItem(position: position, mode: .buyMore)
                         } label: {
                             Label("加仓", systemImage: "plus.circle")
                         }
                         
                         Button {
-                            positionSheetMode = .sell
-                            selectedPosition = position
-                            showingPositionSheet = true
+                            positionSheetItem = PositionSheetItem(position: position, mode: .sell)
                         } label: {
                             Label("卖出", systemImage: "minus.circle")
                         }
@@ -290,9 +288,7 @@ struct PortfolioDetailView: View {
                         Divider()
                         
                         Button {
-                            positionSheetMode = .edit
-                            selectedPosition = position
-                            showingPositionSheet = true
+                            positionSheetItem = PositionSheetItem(position: position, mode: .edit)
                         } label: {
                             Label("编辑", systemImage: "pencil")
                         }

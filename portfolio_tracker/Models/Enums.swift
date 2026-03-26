@@ -125,6 +125,21 @@ public enum TransactionType: String, CaseIterable, Codable, Sendable {
     }
 }
 
+/// Position entry mode for recording how position was added
+public enum EntryMode: String, CaseIterable, Codable, Sendable {
+    case quickImport = "quick_import"
+    case amount = "amount"
+    case shares = "shares"
+    
+    public var displayName: String {
+        switch self {
+        case .quickImport: return "快捷导入"
+        case .amount: return "按金额"
+        case .shares: return "按份额"
+        }
+    }
+}
+
 /// Rebalancing frequency
 public enum RebalancingFrequency: String, CaseIterable, Codable, Sendable {
     case monthly

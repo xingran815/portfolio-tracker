@@ -45,6 +45,16 @@ extension Position {
         }
     }
     
+    /// Entry mode as enum
+    public var entryMode: EntryMode {
+        get {
+            EntryMode(rawValue: entryModeRaw ?? EntryMode.shares.rawValue) ?? .shares
+        }
+        set {
+            entryModeRaw = newValue.rawValue
+        }
+    }
+    
     /// Current market value (price * shares)
     public var currentValue: Double? {
         guard currentPrice > 0 else { return nil }
@@ -101,6 +111,7 @@ extension Position {
         shares: Double,
         costBasis: Double,
         currency: Currency? = nil,
+        entryMode: EntryMode = .shares,
         portfolio: Portfolio? = nil
     ) -> Position {
         let position = Position(context: context)
@@ -113,6 +124,7 @@ extension Position {
         position.costBasis = costBasis
         position.currentPrice = 0
         position.currency = currency?.rawValue ?? market.currency
+        position.entryModeRaw = entryMode.rawValue
         position.lastUpdated = nil
         position.portfolio = portfolio
         return position

@@ -27,6 +27,7 @@ extension Position {
     @NSManaged public var costBasis: Double
     @NSManaged public var currentPrice: Double
     @NSManaged public var currency: String?
+    @NSManaged public var entryModeRaw: String?
     @NSManaged public var lastUpdated: Date?
     @NSManaged public var portfolio: Portfolio?
 

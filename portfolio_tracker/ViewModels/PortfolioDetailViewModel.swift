@@ -161,6 +161,7 @@ final class PortfolioDetailViewModel {
         shares: Double,
         costBasis: Double,
         currency: Currency = .cny,
+        entryMode: EntryMode = .shares,
         fees: Double = 0
     ) throws {
         guard let portfolio = portfolio else { return }
@@ -183,6 +184,7 @@ final class PortfolioDetailViewModel {
                 shares: shares,
                 costBasis: costBasis,
                 currency: currency,
+                entryMode: entryMode,
                 portfolio: portfolio
             )
         }
@@ -289,7 +291,8 @@ final class PortfolioDetailViewModel {
         assetType: AssetType,
         market: Market,
         shares: Double,
-        costBasis: Double
+        costBasis: Double,
+        entryMode: EntryMode = .shares
     ) throws {
         position.symbol = symbol
         position.name = name
@@ -297,7 +300,7 @@ final class PortfolioDetailViewModel {
         position.marketRaw = market.rawValue
         position.shares = shares
         position.costBasis = costBasis
-        position.currency = market.currency
+        position.entryModeRaw = entryMode.rawValue
         
         if let portfolio = portfolio {
             portfolio.updatedAt = Date()
