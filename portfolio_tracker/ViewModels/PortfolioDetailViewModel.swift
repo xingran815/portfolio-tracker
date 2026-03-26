@@ -167,6 +167,7 @@ final class PortfolioDetailViewModel {
         costBasis: Double,
         currency: Currency = .cny,
         entryMode: EntryMode = .shares,
+        initialPrice: Double = 0,
         fees: Double = 0
     ) throws {
         guard let portfolio = portfolio else { return }
@@ -190,6 +191,7 @@ final class PortfolioDetailViewModel {
                 costBasis: costBasis,
                 currency: currency,
                 entryMode: entryMode,
+                initialPrice: initialPrice,
                 portfolio: portfolio
             )
         }

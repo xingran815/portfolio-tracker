@@ -384,6 +384,7 @@ struct PositionManagementSheet: View {
         let feesNum = Double(fees) ?? 0
         let trimmedSymbol = symbol.trimmingCharacters(in: .whitespaces).uppercased()
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let shouldAutoUpdatePrice = fetchedNav == nil
         
         do {
             switch mode {
@@ -397,6 +398,7 @@ struct PositionManagementSheet: View {
                     costBasis: priceNum,
                     currency: currency,
                     entryMode: entryMode,
+                    initialPrice: fetchedNav ?? 0,
                     fees: feesNum
                 )
                 
@@ -432,6 +434,18 @@ struct PositionManagementSheet: View {
                 )
             }
             viewModel.refreshData()
+            
+            if shouldAutoUpdatePrice || mode == .buyMore || mode == .sell || mode == .edit {
+                Task {
+                    if let position = viewModel.positions.first(where: { $0.symbol?.uppercased() == trimmedSymbol }) {
+                        await viewModel.updatePrice(for: position)
+                        await MainActor.run {
+                            viewModel.refreshData()
+                        }
+                    }
+                }
+            }
+            
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

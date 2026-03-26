@@ -112,6 +112,7 @@ extension Position {
         costBasis: Double,
         currency: Currency? = nil,
         entryMode: EntryMode = .shares,
+        initialPrice: Double = 0,
         portfolio: Portfolio? = nil
     ) -> Position {
         let position = Position(context: context)
@@ -122,10 +123,10 @@ extension Position {
         position.marketRaw = market.rawValue
         position.shares = shares
         position.costBasis = costBasis
-        position.currentPrice = 0
+        position.currentPrice = initialPrice
         position.currency = currency?.rawValue ?? market.currency
         position.entryModeRaw = entryMode.rawValue
-        position.lastUpdated = nil
+        position.lastUpdated = initialPrice > 0 ? Date() : nil
         position.portfolio = portfolio
         return position
     }
