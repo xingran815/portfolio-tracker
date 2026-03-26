@@ -23,6 +23,7 @@ struct PortfolioDetailView: View {
     @State private var positionSheetItem: PositionSheetItem?
     @State private var showingDeleteConfirmation = false
     @State private var positionToDelete: Position?
+    @State private var exchangeRates: [String: Double] = [:]
     
     let portfolio: Portfolio?
     
@@ -36,9 +37,20 @@ struct PortfolioDetailView: View {
                 contentView(portfolio: portfolio)
                     .onAppear {
                         viewModel.setPortfolio(portfolio)
+                        Task {
+                            await fetchExchangeRates()
+                        }
                     }
                     .onChange(of: portfolio.id) { _, _ in
                         viewModel.setPortfolio(portfolio)
+                        Task {
+                            await fetchExchangeRates()
+                        }
+                    }
+                    .onChange(of: portfolio.currency) { _, _ in
+                        Task {
+                            await fetchExchangeRates()
+                        }
                     }
             } else {
                 emptyStateView
@@ -122,27 +134,32 @@ struct PortfolioDetailView: View {
     }
     
     private func summarySection(portfolio: Portfolio) -> some View {
-        VStack(spacing: 12) {
+        let convertedValue = exchangeRates.isEmpty ? viewModel.totalValue : portfolio.totalValueIn(currency: portfolio.currency, rates: exchangeRates)
+        let convertedCost = exchangeRates.isEmpty ? viewModel.totalCost : portfolio.totalCostIn(currency: portfolio.currency, rates: exchangeRates)
+        let convertedProfitLoss = convertedValue - convertedCost
+        let profitLossPercent = convertedCost > 0 ? convertedProfitLoss / convertedCost : 0
+        
+        return VStack(spacing: 12) {
             SummaryCard(
                 title: "总市值",
-                value: formatCurrency(viewModel.totalValue, currency: portfolio.currency),
+                value: formatCurrency(convertedValue, currency: portfolio.currency),
                 icon: "dollarsign.circle.fill",
                 color: .blue
             )
             
             SummaryCard(
                 title: "总成本",
-                value: formatCurrency(viewModel.totalCost, currency: portfolio.currency),
+                value: formatCurrency(convertedCost, currency: portfolio.currency),
                 icon: "bag.fill",
                 color: .gray
             )
             
             SummaryCard(
                 title: "盈亏",
-                value: formatCurrency(viewModel.totalProfitLoss, currency: portfolio.currency),
-                subtitle: viewModel.profitLossPercentage.formattedAsPercentage(),
-                icon: viewModel.totalProfitLoss >= 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill",
-                color: viewModel.totalProfitLoss >= 0 ? .green : .red
+                value: formatCurrency(convertedProfitLoss, currency: portfolio.currency),
+                subtitle: profitLossPercent.formattedAsPercentage(),
+                icon: convertedProfitLoss >= 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill",
+                color: convertedProfitLoss >= 0 ? .green : .red
             )
         }
     }
@@ -167,7 +184,7 @@ struct PortfolioDetailView: View {
                     angularInset: 1.5
                 )
                 .cornerRadius(4)
-                .foregroundStyle(by: .value("Symbol", position.symbol ?? "Unknown"))
+                .foregroundStyle(by: .value("Name", position.name ?? position.symbol ?? "Unknown"))
             }
             .frame(height: 200)
             .chartLegend(position: .trailing, alignment: .center)
@@ -320,6 +337,14 @@ struct PortfolioDetailView: View {
             Label("选择投资组合", systemImage: "briefcase")
         } description: {
             Text("从左侧列表选择一个投资组合查看详情")
+        }
+    }
+    
+    private func fetchExchangeRates() async {
+        do {
+            exchangeRates = try await ExchangeRateProvider.shared.fetchRates(base: "USD")
+        } catch {
+            print("Failed to fetch exchange rates: \(error)")
         }
     }
 }

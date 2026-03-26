@@ -17,6 +17,7 @@ struct PortfolioListView: View {
     @State private var portfolioToEdit: Portfolio?
     @State private var portfolioToDelete: Portfolio?
     @State private var showingDeleteConfirmation = false
+    @State private var exchangeRates: [String: Double] = [:]
     
     init(viewModel: PortfolioListViewModel? = nil) {
         _viewModel = State(initialValue: viewModel ?? PortfolioListViewModel())
@@ -27,7 +28,7 @@ struct PortfolioListView: View {
             Section("投资组合") {
                 ForEach(viewModel.portfolios) { portfolio in
                     NavigationLink(value: portfolio.id) {
-                        PortfolioRowView(portfolio: portfolio)
+                        PortfolioRowView(portfolio: portfolio, exchangeRates: exchangeRates)
                     }
                     .tag(portfolio.id)
                     .contextMenu {
@@ -51,6 +52,11 @@ struct PortfolioListView: View {
         }
         .listStyle(.sidebar)
         .navigationTitle("投资组合")
+        .onAppear {
+            Task {
+                await fetchExchangeRates()
+            }
+        }
         .toolbar {
             ToolbarItemGroup {
                 Button(action: { showingImportPicker = true }) {
@@ -158,10 +164,27 @@ struct PortfolioListView: View {
             showingImportError = true
         }
     }
+    
+    private func fetchExchangeRates() async {
+        do {
+            exchangeRates = try await ExchangeRateProvider.shared.fetchRates(base: "USD")
+        } catch {
+            print("Failed to fetch exchange rates: \(error)")
+        }
+    }
 }
 
 struct PortfolioRowView: View {
     let portfolio: Portfolio
+    let exchangeRates: [String: Double]
+    
+    var convertedValue: Double {
+        exchangeRates.isEmpty ? portfolio.totalValue : portfolio.totalValueIn(currency: portfolio.currency, rates: exchangeRates)
+    }
+    
+    var convertedProfitLoss: Double {
+        exchangeRates.isEmpty ? portfolio.totalProfitLoss : portfolio.totalProfitLossIn(currency: portfolio.currency, rates: exchangeRates)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -175,14 +198,14 @@ struct PortfolioRowView: View {
             }
             
             HStack {
-                Text(portfolio.totalValue.formattedAsCurrency(currencyCode: portfolio.currency.code))
+                Text(convertedValue.formattedAsCurrency(currencyCode: portfolio.currency.code))
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                 
                 Spacer()
                 
                 PriceChangeLabel(
-                    value: portfolio.totalProfitLoss,
+                    value: convertedProfitLoss,
                     percentage: portfolio.profitLossPercentage,
                     currencyCode: portfolio.currency.code
                 )

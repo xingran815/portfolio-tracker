@@ -10,6 +10,7 @@ import Charts
 
 /// View for portfolio rebalancing analysis
 struct RebalancingView: View {
+    @Environment(\.dismiss) private var dismiss
     let portfolio: Portfolio?
     
     @State private var viewMode: ViewMode = .visual
@@ -47,7 +48,7 @@ struct RebalancingView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") {
-                        // Dismiss handled by sheet
+                        dismiss()
                     }
                 }
             }

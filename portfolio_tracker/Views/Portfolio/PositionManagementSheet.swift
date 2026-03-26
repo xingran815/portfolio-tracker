@@ -431,6 +431,7 @@ struct PositionManagementSheet: View {
                     entryMode: entryMode
                 )
             }
+            viewModel.refreshData()
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

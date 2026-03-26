@@ -93,6 +93,13 @@ final class PortfolioDetailViewModel {
         }
     }
     
+    /// Refreshes all data for the current portfolio
+    func refreshData() {
+        guard let portfolio = portfolio else { return }
+        viewContext.refresh(portfolio, mergeChanges: false)
+        loadPositions()
+    }
+    
     /// Adds a new position to the portfolio
     /// - Parameters:
     ///   - symbol: Stock/fund symbol
