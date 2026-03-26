@@ -55,6 +55,7 @@ struct PositionManagementSheet: View {
     @State private var fetchedNavDate: String?
     @State private var fetchedDataProvider: String?
     @State private var isFetchingNav = false
+    @State private var isUpdatingPrice = false
     
     @State private var showError = false
     @State private var errorMessage = ""
@@ -126,19 +127,31 @@ struct PositionManagementSheet: View {
                 if mode == .sell || mode == .buyMore {
                     currentInfoSection
                 }
+                
+                if isUpdatingPrice {
+                    Section {
+                        HStack {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("正在更新价格...")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             .formStyle(.grouped)
             .navigationTitle(mode.title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
+                        .disabled(isUpdatingPrice)
                 }
                 
                 ToolbarItem(placement: .confirmationAction) {
                     Button(mode.confirmButton) {
                         performAction()
                     }
-                    .disabled(!isValid)
+                    .disabled(!isValid || isUpdatingPrice)
                 }
             }
             .alert("错误", isPresented: $showError) {
@@ -384,7 +397,7 @@ struct PositionManagementSheet: View {
         let feesNum = Double(fees) ?? 0
         let trimmedSymbol = symbol.trimmingCharacters(in: .whitespaces).uppercased()
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        let shouldAutoUpdatePrice = fetchedNav == nil
+        let shouldUpdatePrice = fetchedNav == nil || mode == .buyMore || mode == .sell || mode == .edit
         
         do {
             switch mode {
@@ -433,20 +446,21 @@ struct PositionManagementSheet: View {
                     entryMode: entryMode
                 )
             }
-            viewModel.refreshData()
             
-            if shouldAutoUpdatePrice || mode == .buyMore || mode == .sell || mode == .edit {
+            if shouldUpdatePrice {
+                isUpdatingPrice = true
                 Task {
-                    if let position = viewModel.positions.first(where: { $0.symbol?.uppercased() == trimmedSymbol }) {
-                        await viewModel.updatePrice(for: position)
-                        await MainActor.run {
-                            viewModel.refreshData()
-                        }
+                    await viewModel.updatePriceForSymbol(trimmedSymbol)
+                    await MainActor.run {
+                        viewModel.refreshData()
+                        isUpdatingPrice = false
+                        dismiss()
                     }
                 }
+            } else {
+                viewModel.refreshData()
+                dismiss()
             }
-            
-            dismiss()
         } catch {
             errorMessage = error.localizedDescription
             showError = true

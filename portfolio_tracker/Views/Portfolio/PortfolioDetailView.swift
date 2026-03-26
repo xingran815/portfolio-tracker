@@ -24,6 +24,7 @@ struct PortfolioDetailView: View {
     @State private var showingDeleteConfirmation = false
     @State private var positionToDelete: Position?
     @State private var exchangeRates: [String: Double] = [:]
+    @State private var exchangeRateError: String?
     
     let portfolio: Portfolio?
     
@@ -136,6 +137,7 @@ struct PortfolioDetailView: View {
         let convertedCost = exchangeRates.isEmpty ? viewModel.totalCost : portfolio.totalCostIn(currency: portfolio.currency, rates: exchangeRates)
         let convertedProfitLoss = convertedValue - convertedCost
         let profitLossPercent = convertedCost > 0 ? convertedProfitLoss / convertedCost : 0
+        let pendingPriceCount = viewModel.positions.filter { $0.currentPrice == 0 }.count
         
         return VStack(spacing: 12) {
             SummaryCard(
@@ -159,6 +161,28 @@ struct PortfolioDetailView: View {
                 icon: convertedProfitLoss >= 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill",
                 color: convertedProfitLoss >= 0 ? .green : .red
             )
+            
+            if pendingPriceCount > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("\(pendingPriceCount) 个持仓价格待更新")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
+            }
+            
+            if exchangeRateError != nil {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("汇率获取失败，多币种资产显示可能不准确")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
+            }
         }
     }
     
@@ -244,26 +268,39 @@ struct PortfolioDetailView: View {
             .width(60)
             
             TableColumn("市值") { position in
-                Text((position.currentValue ?? 0).formattedAsCurrency(currencyCode: position.currencyEnum.code))
-                    .monospacedDigit()
+                if position.currentPrice > 0 {
+                    Text((position.currentValue ?? 0).formattedAsCurrency(currencyCode: position.currencyEnum.code))
+                        .monospacedDigit()
+                } else {
+                    Text("待更新")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                }
             }
             .width(100)
             
             TableColumn("盈亏") { position in
-                HStack(spacing: 2) {
+                if position.currentPrice > 0 {
                     let profitLoss = position.profitLoss ?? 0
                     Text(profitLoss.formattedAsCurrency(currencyCode: position.currencyEnum.code))
                         .monospacedDigit()
+                        .foregroundStyle(profitLoss >= 0 ? .green : .red)
+                } else {
+                    Text("--")
+                        .foregroundStyle(.secondary)
                 }
-                .font(.caption)
-                .foregroundStyle((position.profitLoss ?? 0) >= 0 ? .green : .red)
             }
             .width(100)
             
             TableColumn("盈亏%") { position in
-                Text((position.profitLossPercentage ?? 0).formattedAsPercentage())
-                    .monospacedDigit()
-                    .foregroundStyle((position.profitLoss ?? 0) >= 0 ? .green : .red)
+                if position.currentPrice > 0 {
+                    Text((position.profitLossPercentage ?? 0).formattedAsPercentage())
+                        .monospacedDigit()
+                        .foregroundStyle((position.profitLoss ?? 0) >= 0 ? .green : .red)
+                } else {
+                    Text("--")
+                        .foregroundStyle(.secondary)
+                }
             }
             .width(70)
             
@@ -274,8 +311,14 @@ struct PortfolioDetailView: View {
             .width(80)
             
             TableColumn("现价") { position in
-                Text(position.currentPrice.formattedAsCurrency(currencyCode: position.currencyEnum.code))
-                    .monospacedDigit()
+                if position.currentPrice > 0 {
+                    Text(position.currentPrice.formattedAsCurrency(currencyCode: position.currencyEnum.code))
+                        .monospacedDigit()
+                } else {
+                    Text("待更新")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                }
             }
             .width(100)
             
@@ -341,7 +384,9 @@ struct PortfolioDetailView: View {
     private func fetchExchangeRates() async {
         do {
             exchangeRates = try await ExchangeRateProvider.shared.fetchRates(base: "USD")
+            exchangeRateError = nil
         } catch {
+            exchangeRateError = error.localizedDescription
             print("Failed to fetch exchange rates: \(error)")
         }
     }

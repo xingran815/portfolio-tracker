@@ -20,7 +20,9 @@ struct PortfolioListView: View {
     @State private var portfolioToDelete: Portfolio?
     @State private var showingDeleteConfirmation = false
     @State private var exchangeRates: [String: Double] = [:]
+    @State private var exchangeRateError: String?
     @State private var cancellables = Set<AnyCancellable>()
+    @State private var refreshTask: Task<Void, Never>?
     
     init(viewModel: PortfolioListViewModel? = nil) {
         _viewModel = State(initialValue: viewModel ?? PortfolioListViewModel())
@@ -172,7 +174,9 @@ struct PortfolioListView: View {
     private func fetchExchangeRates() async {
         do {
             exchangeRates = try await ExchangeRateProvider.shared.fetchRates(base: "USD")
+            exchangeRateError = nil
         } catch {
+            exchangeRateError = error.localizedDescription
             print("Failed to fetch exchange rates: \(error)")
         }
     }
@@ -183,10 +187,19 @@ struct PortfolioListView: View {
             object: viewModel.viewContext
         )
         .receive(on: DispatchQueue.main)
-        .sink { _ in
-            viewModel.refreshPortfolios()
-            Task {
-                await fetchExchangeRates()
+        .sink { notification in
+            if let inserted = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> {
+                let hasRelevantChanges = inserted.contains { $0 is Portfolio || $0 is Position }
+                guard hasRelevantChanges else { return }
+            }
+            
+            refreshTask?.cancel()
+            refreshTask = Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                if !Task.isCancelled {
+                    viewModel.refreshPortfolios()
+                    await fetchExchangeRates()
+                }
             }
         }
         .store(in: &cancellables)

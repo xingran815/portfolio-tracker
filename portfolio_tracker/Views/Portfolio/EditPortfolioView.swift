@@ -22,6 +22,9 @@ struct EditPortfolioView: View {
     @State private var showTargetAllocation = false
     @State private var targetAllocations: [TargetAllocationData]
     
+    @State private var showError = false
+    @State private var errorMessage = ""
+    
     let portfolio: Portfolio
     var onSave: (Portfolio) -> Void
     
@@ -77,6 +80,12 @@ struct EditPortfolioView: View {
             }
         }
         .frame(minWidth: 500, minHeight: 450)
+        .alert("保存失败", isPresented: $showError) {
+            Button("重试") { savePortfolio() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
     }
     
     private var basicInfoSection: some View {
@@ -171,12 +180,12 @@ struct EditPortfolioView: View {
         
         do {
             try portfolio.managedObjectContext?.save()
+            onSave(portfolio)
+            dismiss()
         } catch {
-            print("Failed to save portfolio: \(error)")
+            errorMessage = error.localizedDescription
+            showError = true
         }
-        
-        onSave(portfolio)
-        dismiss()
     }
     
     private func parsePercentage(_ value: String) -> Double? {

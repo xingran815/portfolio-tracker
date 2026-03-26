@@ -361,6 +361,16 @@ final class PortfolioDetailViewModel {
         }
     }
     
+    /// Updates price for a position by symbol
+    /// - Parameter symbol: Position symbol
+    func updatePriceForSymbol(_ symbol: String) async {
+        guard let position = positions.first(where: { $0.symbol?.uppercased() == symbol.uppercased() }) else {
+            logger.warning("Position not found for symbol: \(symbol)")
+            return
+        }
+        await updatePrice(for: position)
+    }
+    
     /// Updates all position prices
     func updateAllPrices() async {
         for position in positions {
