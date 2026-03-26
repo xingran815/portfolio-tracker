@@ -169,6 +169,12 @@ struct EditPortfolioView: View {
         }
         portfolio.targetAllocation = allocation
         
+        do {
+            try portfolio.managedObjectContext?.save()
+        } catch {
+            print("Failed to save portfolio: \(error)")
+        }
+        
         onSave(portfolio)
         dismiss()
     }

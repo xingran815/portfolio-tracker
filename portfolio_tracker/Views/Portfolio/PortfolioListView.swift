@@ -7,6 +7,8 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import CoreData
+import Combine
 
 struct PortfolioListView: View {
     @State private var viewModel: PortfolioListViewModel
@@ -18,6 +20,7 @@ struct PortfolioListView: View {
     @State private var portfolioToDelete: Portfolio?
     @State private var showingDeleteConfirmation = false
     @State private var exchangeRates: [String: Double] = [:]
+    @State private var cancellables = Set<AnyCancellable>()
     
     init(viewModel: PortfolioListViewModel? = nil) {
         _viewModel = State(initialValue: viewModel ?? PortfolioListViewModel())
@@ -56,6 +59,7 @@ struct PortfolioListView: View {
             Task {
                 await fetchExchangeRates()
             }
+            setupCoreDataObserver()
         }
         .toolbar {
             ToolbarItemGroup {
@@ -171,6 +175,21 @@ struct PortfolioListView: View {
         } catch {
             print("Failed to fetch exchange rates: \(error)")
         }
+    }
+    
+    private func setupCoreDataObserver() {
+        NotificationCenter.default.publisher(
+            for: NSNotification.Name.NSManagedObjectContextObjectsDidChange,
+            object: viewModel.viewContext
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { _ in
+            viewModel.refreshPortfolios()
+            Task {
+                await fetchExchangeRates()
+            }
+        }
+        .store(in: &cancellables)
     }
 }
 

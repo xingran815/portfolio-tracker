@@ -33,7 +33,7 @@ final class PortfolioListViewModel {
     
     // MARK: - Dependencies
     
-    private let viewContext: NSManagedObjectContext
+    let viewContext: NSManagedObjectContext
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "PortfolioListViewModel")
     
     // MARK: - Initialization
