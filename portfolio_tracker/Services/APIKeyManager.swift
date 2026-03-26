@@ -202,10 +202,8 @@ actor APIKeyManager {
     func isValidKeyFormat(_ key: String, for serviceType: APIService) -> Bool {
         switch serviceType {
         case .alphaVantage:
-            // Alpha Vantage keys are typically alphanumeric
             return key.count >= 10 && !key.contains(" ")
         case .kimi:
-            // Kimi keys start with specific prefix
             return key.hasPrefix("sk-") && key.count > 20
         }
     }

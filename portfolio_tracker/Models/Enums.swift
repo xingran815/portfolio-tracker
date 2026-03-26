@@ -100,6 +100,14 @@ public enum Market: String, CaseIterable, Codable, Sendable {
         case .cn: return "CNY"
         }
     }
+    
+    public var currencySymbol: String {
+        switch self {
+        case .us: return "$"
+        case .hk: return "HK$"
+        case .cn: return "¥"
+        }
+    }
 }
 
 /// Transaction type

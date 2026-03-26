@@ -328,31 +328,27 @@ struct SummaryCard: View {
     let color: Color
     
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: icon)
                     .foregroundStyle(color)
-                Spacer()
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
             
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+            Text(value)
+                .font(.title2)
+                .fontWeight(.bold)
+                .lineLimit(1)
+            
+            if let subtitle = subtitle {
+                Text(subtitle)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                
-                Text(value)
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                
-                if let subtitle = subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(color)
-                }
+                    .foregroundStyle(color)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(color.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12))

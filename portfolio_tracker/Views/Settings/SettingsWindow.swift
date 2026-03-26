@@ -109,13 +109,11 @@ struct SettingsWindow: View {
     
     private var apiKeysSettingsView: some View {
         Form {
-            // Alpha Vantage Section
             alphaVantageSection
             
             Divider()
                 .padding(.vertical, 8)
             
-            // Kimi API Section
             kimiSection
         }
         .formStyle(.grouped)

@@ -47,16 +47,19 @@ final class PortfolioDetailViewModel {
     
     private let viewContext: NSManagedObjectContext
     private let dataProvider: any DataProviderProtocol
+    private let chinaFundProvider: ChinaFundProvider
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "PortfolioDetailViewModel")
     
     // MARK: - Initialization
     
     init(
         context: NSManagedObjectContext = PersistenceController.shared.viewContext,
-        dataProvider: any DataProviderProtocol = MockDataProvider()
+        dataProvider: any DataProviderProtocol = MockDataProvider(),
+        chinaFundProvider: ChinaFundProvider? = nil
     ) {
         self.viewContext = context
         self.dataProvider = dataProvider
+        self.chinaFundProvider = chinaFundProvider ?? ChinaFundProvider()
     }
     
     // MARK: - Public Methods
@@ -77,8 +80,19 @@ final class PortfolioDetailViewModel {
             return
         }
         
-        let positionSet = portfolio.positions as? Set<Position> ?? []
-        positions = Array(positionSet).sorted { ($0.currentValue ?? 0) > ($1.currentValue ?? 0) }
+        let request = Position.fetchRequest()
+        request.predicate = NSPredicate(format: "portfolio == %@ AND shares > 0", portfolio)
+        request.sortDescriptors = [
+            NSSortDescriptor(key: "currentPrice", ascending: false)
+        ]
+        
+        do {
+            self.positions = try viewContext.fetch(request)
+            logger.debug("Loaded \(self.positions.count) positions")
+        } catch {
+            logger.error("Failed to fetch positions: \(error)")
+            positions = []
+        }
     }
     
     /// Adds a new position to the portfolio
@@ -316,10 +330,13 @@ final class PortfolioDetailViewModel {
         defer { isLoading = false }
         
         do {
-            let quote = try await dataProvider.fetchQuote(
-                symbol: symbol,
-                market: position.market
-            )
+            let quote: Quote
+            
+            if position.assetType == .fund && position.market == .cn {
+                quote = try await chinaFundProvider.fetchQuote(symbol: symbol, market: position.market)
+            } else {
+                quote = try await dataProvider.fetchQuote(symbol: symbol, market: position.market)
+            }
             
             position.updatePrice(quote.price, at: quote.lastUpdated)
             try viewContext.save()

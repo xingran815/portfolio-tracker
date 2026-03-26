@@ -16,13 +16,32 @@ struct Quote: Sendable, Codable {
     let volume: Int64
     let lastUpdated: Date
     let currency: String
+    let dataProvider: String?
     
-    /// Convenience computed property for formatted price
+    init(
+        symbol: String,
+        price: Double,
+        change: Double,
+        changePercent: Double,
+        volume: Int64,
+        lastUpdated: Date,
+        currency: String,
+        dataProvider: String? = nil
+    ) {
+        self.symbol = symbol
+        self.price = price
+        self.change = change
+        self.changePercent = changePercent
+        self.volume = volume
+        self.lastUpdated = lastUpdated
+        self.currency = currency
+        self.dataProvider = dataProvider
+    }
+    
     var formattedPrice: String {
         String(format: "%.2f", price)
     }
     
-    /// Convenience computed property for formatted change
     var formattedChange: String {
         let sign = change >= 0 ? "+" : ""
         return String(format: "%@%.2f (%@%.2f%%)", sign, change, sign, changePercent)
@@ -136,7 +155,7 @@ private struct QuoteCacheEntry: Sendable {
     let timestamp: Date
     
     var isValid: Bool {
-        Date().timeIntervalSince(timestamp) < 300 // 5 minutes
+        Date().timeIntervalSince(timestamp) < 86400 // 1 day
     }
 }
 
@@ -163,7 +182,7 @@ actor QuoteCache {
     func clearExpired() {
         let now = Date()
         cache = cache.filter { _, entry in
-            now.timeIntervalSince(entry.timestamp) < 300
+            now.timeIntervalSince(entry.timestamp) < 86400
         }
     }
 }
