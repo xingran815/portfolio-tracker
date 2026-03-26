@@ -47,11 +47,6 @@ struct PortfolioDetailView: View {
                             await fetchExchangeRates()
                         }
                     }
-                    .onChange(of: portfolio.currency) { _, _ in
-                        Task {
-                            await fetchExchangeRates()
-                        }
-                    }
             } else {
                 emptyStateView
             }
@@ -70,6 +65,9 @@ struct PortfolioDetailView: View {
             if let portfolio = portfolio {
                 EditPortfolioView(portfolio: portfolio) { _ in
                     viewModel.setPortfolio(portfolio)
+                    Task {
+                        await fetchExchangeRates()
+                    }
                 }
             }
         }
