@@ -34,6 +34,7 @@ struct PortfolioListView: View {
                 ForEach(viewModel.portfolios) { portfolio in
                     NavigationLink(value: portfolio.id) {
                         PortfolioRowView(portfolio: portfolio, exchangeRates: exchangeRates)
+                            .id("\(portfolio.id?.uuidString ?? "")-\(portfolio.positions?.count ?? 0)-\(portfolio.updatedAt?.timeIntervalSince1970 ?? 0)")
                     }
                     .tag(portfolio.id)
                     .contextMenu {
@@ -188,10 +189,14 @@ struct PortfolioListView: View {
         )
         .receive(on: DispatchQueue.main)
         .sink { notification in
-            if let inserted = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> {
-                let hasRelevantChanges = inserted.contains { $0 is Portfolio || $0 is Position }
-                guard hasRelevantChanges else { return }
-            }
+            let hasInserted = (notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject>)?
+                .contains { $0 is Portfolio || $0 is Position } ?? false
+            let hasUpdated = (notification.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject>)?
+                .contains { $0 is Position } ?? false
+            let hasDeleted = (notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject>)?
+                .contains { $0 is Position } ?? false
+            
+            guard hasInserted || hasUpdated || hasDeleted else { return }
             
             refreshTask?.cancel()
             refreshTask = Task {

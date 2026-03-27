@@ -330,6 +330,7 @@ final class PortfolioDetailViewModel {
     /// - Parameter position: Position to delete
     func deletePosition(_ position: Position) {
         viewContext.delete(position)
+        portfolio?.updatedAt = Date()
         
         do {
             try viewContext.save()
