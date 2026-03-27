@@ -748,4 +748,167 @@ final class ViewModelSyncTests: XCTestCase {
         XCTAssertEqual(refreshedPortfolio.positions?.count, 1, "Should have 1 position after refresh")
         XCTAssertEqual(refreshedPortfolio.totalValue, 10000, "totalValue should be 10000 after refresh")
     }
+    
+    /// 测试用户报告的具体场景：删除所有现金持仓并重新加入同样的现金持仓后，左侧投资组合没有更新
+    /// 这是最重要的测试，用于重现用户实际遇到的问题
+    func testDeleteAllCashAndReAdd_updatesPortfolioCorrectly() throws {
+        print("🔴 TEST: testDeleteAllCashAndReAdd_updatesPortfolioCorrectly")
+        print("🔴 Reproducing user-reported issue: After deleting all cash and re-adding, left sidebar doesn't update")
+        
+        // 1. 创建 portfolio
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        try viewContext.save()
+        
+        let portfolioId = portfolio.id!
+        
+        // 2. 添加现金 position
+        var cashPosition = Position(context: viewContext)
+        cashPosition.id = UUID()
+        cashPosition.symbol = ""
+        cashPosition.name = "现金"
+        cashPosition.assetTypeRaw = AssetType.cash.rawValue
+        cashPosition.shares = 10000
+        cashPosition.costBasis = 1.0
+        cashPosition.currentPrice = 1.0
+        cashPosition.portfolio = portfolio
+        
+        portfolio.updatedAt = Date()
+        
+        try viewContext.save()
+        
+        print("🔴 Step 1 - After adding cash:")
+        print("🔴   portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        print("🔴   portfolio.totalValue = \(portfolio.totalValue)")
+        
+        XCTAssertEqual(portfolio.positions?.count, 1, "Should have 1 position after add")
+        XCTAssertEqual(portfolio.totalValue, 10000, "totalValue should be 10000")
+        
+        // 3. 删除所有现金持仓
+        // 获取所有 cash positions
+        let cashPositions = (portfolio.positions as? Set<Position>)?.filter { $0.assetType == .cash } ?? []
+        print("🔴 Step 2 - Found \(cashPositions.count) cash positions to delete")
+        
+        for pos in cashPositions {
+            viewContext.delete(pos)
+        }
+        
+        portfolio.updatedAt = Date()
+        try viewContext.save()
+        
+        print("🔴 Step 2 - After deleting all cash:")
+        print("🔴   portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        print("🔴   portfolio.totalValue = \(portfolio.totalValue)")
+        
+        XCTAssertEqual(portfolio.positions?.count, 0, "Should have 0 positions after delete")
+        XCTAssertEqual(portfolio.totalValue, 0, "totalValue should be 0")
+        
+        // 4. 重新加入同样的现金持仓
+        cashPosition = Position(context: viewContext)
+        cashPosition.id = UUID()
+        cashPosition.symbol = ""
+        cashPosition.name = "现金"
+        cashPosition.assetTypeRaw = AssetType.cash.rawValue
+        cashPosition.shares = 10000
+        cashPosition.costBasis = 1.0
+        cashPosition.currentPrice = 1.0
+        cashPosition.portfolio = portfolio
+        
+        portfolio.updatedAt = Date()
+        
+        try viewContext.save()
+        
+        print("🔴 Step 3 - After re-adding cash (same portfolio instance):")
+        print("🔴   portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        print("🔴   portfolio.totalValue = \(portfolio.totalValue)")
+        print("🔴   portfolio.totalCost = \(portfolio.totalCost)")
+        
+        // ⚠️ 这是用户报告问题的关键验证点
+        // 如果这些断言失败，说明我们成功重现了问题
+        XCTAssertEqual(portfolio.positions?.count, 1, "⚠️ USER ISSUE: Should have 1 position after re-add")
+        XCTAssertEqual(portfolio.totalValue, 10000, "⚠️ USER ISSUE: totalValue should be 10000 after re-add")
+        XCTAssertEqual(portfolio.totalCost, 10000, "totalCost should be 10000 after re-add")
+        
+        // 5. 模拟 @FetchRequest 重新获取（检查 @FetchRequest 是否能看到更新）
+        let request = Portfolio.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Portfolio.name, ascending: true)]
+        let fetchedPortfolios = try viewContext.fetch(request)
+        let fetchedPortfolio = fetchedPortfolios.first!
+        
+        print("🔴 Step 4 - After simulating @FetchRequest re-fetch:")
+        print("🔴   fetchedPortfolio.positions.count = \(fetchedPortfolio.positions?.count ?? -1)")
+        print("🔴   fetchedPortfolio.totalValue = \(fetchedPortfolio.totalValue)")
+        
+        XCTAssertEqual(fetchedPortfolio.positions?.count, 1, "Fetched portfolio should have 1 position")
+        XCTAssertEqual(fetchedPortfolio.totalValue, 10000, "Fetched portfolio totalValue should be 10000")
+    }
+    
+    /// 测试在删除并重新添加后，refreshAllObjects() 是否能解决问题
+    func testDeleteAllCashAndReAdd_withRefreshAllObjects() throws {
+        print("🔴 TEST: testDeleteAllCashAndReAdd_withRefreshAllObjects")
+        print("🔴 Testing if refreshAllObjects() fixes the delete-and-re-add issue")
+        
+        // 1. 创建 portfolio
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        try viewContext.save()
+        
+        let portfolioId = portfolio.id!
+        
+        // 2. 添加现金 position
+        var cashPosition = Position(context: viewContext)
+        cashPosition.id = UUID()
+        cashPosition.symbol = ""
+        cashPosition.name = "现金"
+        cashPosition.assetTypeRaw = AssetType.cash.rawValue
+        cashPosition.shares = 10000
+        cashPosition.costBasis = 1.0
+        cashPosition.currentPrice = 1.0
+        cashPosition.portfolio = portfolio
+        
+        try viewContext.save()
+        
+        // 3. 删除所有现金持仓
+        let cashPositions = (portfolio.positions as? Set<Position>)?.filter { $0.assetType == .cash } ?? []
+        for pos in cashPositions {
+            viewContext.delete(pos)
+        }
+        try viewContext.save()
+        
+        // 4. 重新加入同样的现金持仓
+        cashPosition = Position(context: viewContext)
+        cashPosition.id = UUID()
+        cashPosition.symbol = ""
+        cashPosition.name = "现金"
+        cashPosition.assetTypeRaw = AssetType.cash.rawValue
+        cashPosition.shares = 10000
+        cashPosition.costBasis = 1.0
+        cashPosition.currentPrice = 1.0
+        cashPosition.portfolio = portfolio
+        
+        portfolio.updatedAt = Date()
+        try viewContext.save()
+        
+        // 5. 调用 refreshAllObjects()
+        viewContext.refreshAllObjects()
+        
+        // 6. 重新 fetch
+        let request = Portfolio.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
+        let fetchedPortfolios = try viewContext.fetch(request)
+        let refreshedPortfolio = fetchedPortfolios.first!
+        
+        print("🔴 After refreshAllObjects() and re-fetch:")
+        print("🔴   refreshedPortfolio.positions.count = \(refreshedPortfolio.positions?.count ?? -1)")
+        print("🔴   refreshedPortfolio.totalValue = \(refreshedPortfolio.totalValue)")
+        
+        // 7. 验证
+        XCTAssertEqual(refreshedPortfolio.positions?.count, 1, "Should have 1 position after refresh")
+        XCTAssertEqual(refreshedPortfolio.totalValue, 10000, "totalValue should be 10000 after refresh")
+    }
 }
