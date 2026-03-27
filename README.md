@@ -15,10 +15,12 @@ See [SECURITY.md](SECURITY.md) for details.
 ## Requirements
 
 - macOS 14.0+
-- Xcode 15.0+
+- Xcode 16.0+
 - Swift 6.0
-- Alpha Vantage API key (free tier: 25 req/day)
-- Kimi API key (optional, for AI features)
+- Alpha Vantage API key (for US/HK stocks)
+- Kimi API key (optional, for AI advisor)
+
+**Note:** Chinese funds use 天天基金 API (free, no authentication required)
 
 ## Setup
 
@@ -39,6 +41,10 @@ open portfolio_tracker.xcodeproj
 **Kimi API** (optional, for AI advisor):
 1. Get API key at [platform.moonshot.cn](https://platform.moonshot.cn)
 2. In the app: Settings → API Keys → Kimi API
+
+**Chinese Funds** (no setup required):
+- Uses 天天基金 API (free, no API key)
+- Automatically fetches fund NAV
 
 API keys are stored securely in macOS Keychain and never leave your device.
 
@@ -77,9 +83,12 @@ SwiftUI → ViewModels → Services → CoreData
                 ↓
          APIKeyManager (Keychain)
                 ↓
-         AlphaVantage API
-                ↓
-         Kimi API (LLM)
+         ┌──────────────────────┐
+         │ AlphaVantage API     │ (US/HK stocks)
+         │ 天天基金 API          │ (Chinese funds)
+         │ Exchange Rate API    │ (Currency conversion)
+         │ Kimi API             │ (LLM advisor)
+         └──────────────────────┘
 ```
 
 ## Data Privacy
@@ -94,12 +103,17 @@ SwiftUI → ViewModels → Services → CoreData
 ## Phase Status
 
 - [x] Phase 1: CoreData Models + Xcode Project
-- [ ] Phase 2: AlphaVantage Provider
-- [ ] Phase 3: LLM Service
-- [ ] Phase 4: MD Parser
-- [ ] Phase 5: Rebalancing Engine
-- [ ] Phase 6: SwiftUI Views
-- [ ] Phase 7: Swift Testing
+- [x] Phase 2: AlphaVantage Provider
+- [x] Phase 3: LLM Service (Kimi API)
+- [x] Phase 4: MD Parser
+- [x] Phase 5: Rebalancing Engine
+- [x] Phase 6: SwiftUI Views
+- [x] Phase 7: Feature Enhancements
+  - 天天基金集成
+  - 快捷导入模式
+  - 汇率换算
+  - 数据同步优化
+  - 现金类型支持
 
 See [GitHub Issues](https://github.com/xingran815/portfolio-tracker/issues) for detailed phase breakdown.
 
