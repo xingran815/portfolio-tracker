@@ -133,11 +133,20 @@ struct PortfolioDetailView: View {
     }
     
     private func summarySection(portfolio: Portfolio) -> some View {
-        let convertedValue = exchangeRates.isEmpty ? viewModel.totalValue : portfolio.totalValueIn(currency: portfolio.currency, rates: exchangeRates)
-        let convertedCost = exchangeRates.isEmpty ? viewModel.totalCost : portfolio.totalCostIn(currency: portfolio.currency, rates: exchangeRates)
+        let convertedValue: Double
+        let convertedCost: Double
+        
+        if exchangeRates.isEmpty {
+            convertedValue = viewModel.totalValue
+            convertedCost = viewModel.totalCost
+        } else {
+            convertedValue = portfolio.totalValueIn(currency: portfolio.currency, rates: exchangeRates, positions: viewModel.positions)
+            convertedCost = portfolio.totalCostIn(currency: portfolio.currency, rates: exchangeRates, positions: viewModel.positions)
+        }
+        
         let convertedProfitLoss = convertedValue - convertedCost
         let profitLossPercent = convertedCost > 0 ? convertedProfitLoss / convertedCost : 0
-        let pendingPriceCount = viewModel.positions.filter { $0.currentPrice == 0 }.count
+        let pendingPriceCount = viewModel.positions.filter { $0.currentPrice == 0 && $0.assetType != .cash }.count
         
         return VStack(spacing: 12) {
             SummaryCard(

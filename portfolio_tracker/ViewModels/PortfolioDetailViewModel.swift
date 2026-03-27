@@ -96,7 +96,15 @@ final class PortfolioDetailViewModel {
     /// Refreshes all data for the current portfolio
     func refreshData() {
         guard let portfolio = portfolio else { return }
+        
         viewContext.refresh(portfolio, mergeChanges: false)
+        
+        if let positionsSet = portfolio.positions as? Set<Position> {
+            for position in positionsSet {
+                viewContext.refresh(position, mergeChanges: false)
+            }
+        }
+        
         loadPositions()
     }
     
@@ -336,6 +344,7 @@ final class PortfolioDetailViewModel {
     /// Updates current price for a position
     /// - Parameter position: Position to update
     func updatePrice(for position: Position) async {
+        guard position.assetType != .cash else { return }
         guard let symbol = position.symbol else { return }
         
         isLoading = true
@@ -368,12 +377,13 @@ final class PortfolioDetailViewModel {
             logger.warning("Position not found for symbol: \(symbol)")
             return
         }
+        guard position.assetType != .cash else { return }
         await updatePrice(for: position)
     }
     
     /// Updates all position prices
     func updateAllPrices() async {
-        for position in positions {
+        for position in positions where position.assetType != .cash {
             await updatePrice(for: position)
             // Small delay to avoid rate limiting
             try? await Task.sleep(for: .milliseconds(100))
@@ -401,17 +411,17 @@ final class PortfolioDetailViewModel {
     
     /// Total portfolio value
     var totalValue: Double {
-        portfolio?.totalValue ?? 0
+        positions.reduce(0) { $0 + ($1.currentValue ?? 0) }
     }
     
     /// Total cost basis
     var totalCost: Double {
-        portfolio?.totalCost ?? 0
+        positions.reduce(0) { $0 + $1.totalCost }
     }
     
     /// Total profit/loss
     var totalProfitLoss: Double {
-        portfolio?.totalProfitLoss ?? 0
+        totalValue - totalCost
     }
     
     /// Profit/loss percentage

@@ -57,6 +57,9 @@ extension Position {
     
     /// Current market value (price * shares)
     public var currentValue: Double? {
+        if assetType == .cash {
+            return totalCost
+        }
         guard currentPrice > 0 else { return nil }
         return currentPrice * shares
     }

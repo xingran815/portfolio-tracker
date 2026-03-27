@@ -181,13 +181,20 @@ struct PositionManagementSheet: View {
                 }
             }
             .disabled(mode == .buyMore || mode == .sell)
-            
-            Picker("市场", selection: $market) {
-                ForEach(Market.allCases, id: \.self) { m in
-                    Text(m.displayName).tag(m)
+            .onChange(of: assetType) { _, newValue in
+                if newValue == .cash {
+                    entryMode = .amount
                 }
             }
-            .disabled(mode == .buyMore || mode == .sell)
+            
+            if assetType != .cash {
+                Picker("市场", selection: $market) {
+                    ForEach(Market.allCases, id: \.self) { m in
+                        Text(m.displayName).tag(m)
+                    }
+                }
+                .disabled(mode == .buyMore || mode == .sell)
+            }
             
             Picker("币种", selection: $currency) {
                 ForEach(Currency.allCases, id: \.self) { c in
@@ -200,7 +207,7 @@ struct PositionManagementSheet: View {
     
     private var transactionSection: some View {
         Section(mode == .edit ? "持仓信息" : "交易信息") {
-            if mode == .add || mode == .buyMore || mode == .edit {
+            if (mode == .add || mode == .buyMore || mode == .edit) && assetType != .cash {
                 Picker("录入方式", selection: $entryMode) {
                     ForEach(EntryMode.allCases, id: \.self) { mode in
                         Text(mode.displayName).tag(mode)
@@ -208,7 +215,7 @@ struct PositionManagementSheet: View {
                 }
             }
             
-            if entryMode == .quickImport && (mode == .add || mode == .buyMore || mode == .edit) {
+            if entryMode == .quickImport && (mode == .add || mode == .buyMore || mode == .edit) && assetType != .cash {
                 HStack {
                     TextField("基金代码", text: $symbol)
                         .textFieldStyle(.roundedBorder)
@@ -397,7 +404,15 @@ struct PositionManagementSheet: View {
         let feesNum = Double(fees) ?? 0
         let trimmedSymbol = symbol.trimmingCharacters(in: .whitespaces).uppercased()
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        let shouldUpdatePrice = fetchedNav == nil || mode == .buyMore || mode == .sell || mode == .edit
+        
+        let initialPrice: Double
+        if assetType == .cash {
+            initialPrice = priceNum
+        } else {
+            initialPrice = fetchedNav ?? 0
+        }
+        
+        let shouldUpdatePrice = assetType != .cash && (fetchedNav == nil || mode == .buyMore || mode == .sell || mode == .edit)
         
         do {
             switch mode {
@@ -411,7 +426,7 @@ struct PositionManagementSheet: View {
                     costBasis: priceNum,
                     currency: currency,
                     entryMode: entryMode,
-                    initialPrice: fetchedNav ?? 0,
+                    initialPrice: initialPrice,
                     fees: feesNum
                 )
                 

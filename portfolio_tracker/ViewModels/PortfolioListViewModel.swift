@@ -55,6 +55,11 @@ final class PortfolioListViewModel {
         
         do {
             portfolios = try viewContext.fetch(request)
+            
+            for portfolio in portfolios {
+                viewContext.refresh(portfolio, mergeChanges: false)
+            }
+            
             logger.info("Loaded \(self.portfolios.count) portfolios")
         } catch {
             logger.error("Failed to fetch portfolios: \(error.localizedDescription)")

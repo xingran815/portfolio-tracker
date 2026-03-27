@@ -210,12 +210,24 @@ struct PortfolioRowView: View {
     let portfolio: Portfolio
     let exchangeRates: [String: Double]
     
+    var positionsArray: [Position] {
+        (portfolio.positions as? Set<Position>)?.sorted { ($0.currentValue ?? 0) > ($1.currentValue ?? 0) } ?? []
+    }
+    
     var convertedValue: Double {
-        exchangeRates.isEmpty ? portfolio.totalValue : portfolio.totalValueIn(currency: portfolio.currency, rates: exchangeRates)
+        if exchangeRates.isEmpty {
+            return positionsArray.reduce(0) { $0 + ($1.currentValue ?? 0) }
+        }
+        return portfolio.totalValueIn(currency: portfolio.currency, rates: exchangeRates, positions: positionsArray)
     }
     
     var convertedProfitLoss: Double {
-        exchangeRates.isEmpty ? portfolio.totalProfitLoss : portfolio.totalProfitLossIn(currency: portfolio.currency, rates: exchangeRates)
+        if exchangeRates.isEmpty {
+            let totalValue = positionsArray.reduce(0) { $0 + ($1.currentValue ?? 0) }
+            let totalCost = positionsArray.reduce(0) { $0 + $1.totalCost }
+            return totalValue - totalCost
+        }
+        return portfolio.totalProfitLossIn(currency: portfolio.currency, rates: exchangeRates, positions: positionsArray)
     }
     
     var body: some View {
@@ -244,7 +256,7 @@ struct PortfolioRowView: View {
             }
             
             HStack {
-                let positionCount = (portfolio.positions as? Set<Position>)?.count ?? 0
+                let positionCount = positionsArray.count
                 Label("\(positionCount) 持仓", systemImage: "number")
                     .font(.caption)
                     .foregroundStyle(.secondary)

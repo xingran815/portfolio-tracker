@@ -126,6 +126,49 @@ extension Portfolio {
     public func totalProfitLossIn(currency targetCurrency: Currency, rates: [String: Double]) -> Double {
         totalValueIn(currency: targetCurrency, rates: rates) - totalCostIn(currency: targetCurrency, rates: rates)
     }
+    
+    /// Total market value converted to target currency using provided rates and positions array
+    public func totalValueIn(currency targetCurrency: Currency, rates: [String: Double], positions: [Position]) -> Double {
+        positions.reduce(0) { sum, position in
+            guard let value = position.currentValue else { return sum }
+            let positionCurrency = position.currencyEnum
+            
+            if positionCurrency == targetCurrency {
+                return sum + value
+            }
+            
+            guard let fromRate = rates[positionCurrency.code],
+                  let toRate = rates[targetCurrency.code] else {
+                return sum + value
+            }
+            
+            return sum + value * (toRate / fromRate)
+        }
+    }
+    
+    /// Total cost converted to target currency using provided rates and positions array
+    public func totalCostIn(currency targetCurrency: Currency, rates: [String: Double], positions: [Position]) -> Double {
+        positions.reduce(0) { sum, position in
+            let cost = position.totalCost
+            let positionCurrency = position.currencyEnum
+            
+            if positionCurrency == targetCurrency {
+                return sum + cost
+            }
+            
+            guard let fromRate = rates[positionCurrency.code],
+                  let toRate = rates[targetCurrency.code] else {
+                return sum + cost
+            }
+            
+            return sum + cost * (toRate / fromRate)
+        }
+    }
+    
+    /// Total profit/loss converted to target currency using positions array
+    public func totalProfitLossIn(currency targetCurrency: Currency, rates: [String: Double], positions: [Position]) -> Double {
+        totalValueIn(currency: targetCurrency, rates: rates, positions: positions) - totalCostIn(currency: targetCurrency, rates: rates, positions: positions)
+    }
 }
 
 // MARK: - Convenience Methods
