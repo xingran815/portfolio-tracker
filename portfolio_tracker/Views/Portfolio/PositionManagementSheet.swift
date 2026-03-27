@@ -79,6 +79,9 @@ struct PositionManagementSheet: View {
     }
     
     private var effectiveShares: Double? {
+        if assetType == .cash {
+            return Double(amount)
+        }
         switch entryMode {
         case .quickImport:
             return quickImportShares
@@ -90,6 +93,9 @@ struct PositionManagementSheet: View {
     }
     
     private var effectivePrice: Double? {
+        if assetType == .cash {
+            return 1.0
+        }
         switch entryMode {
         case .quickImport:
             return quickImportAverageCost
@@ -207,118 +213,129 @@ struct PositionManagementSheet: View {
     
     private var transactionSection: some View {
         Section(mode == .edit ? "持仓信息" : "交易信息") {
-            if (mode == .add || mode == .buyMore || mode == .edit) && assetType != .cash {
-                Picker("录入方式", selection: $entryMode) {
-                    ForEach(EntryMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-            }
-            
-            if entryMode == .quickImport && (mode == .add || mode == .buyMore || mode == .edit) && assetType != .cash {
+            // 现金类型：只显示金额输入
+            if assetType == .cash {
                 HStack {
-                    TextField("基金代码", text: $symbol)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    Button(action: fetchFundNav) {
-                        if isFetchingNav {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text("获取净值")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(symbol.isEmpty || isFetchingNav)
-                }
-                
-                if let nav = fetchedNav, let date = fetchedNavDate {
-                    LabeledContent("当前净值", value: String(format: "%.4f", nav))
-                        .foregroundStyle(.secondary)
-                    LabeledContent("净值日期", value: date)
-                        .foregroundStyle(.secondary)
-                    if let provider = fetchedDataProvider {
-                        LabeledContent("数据来源", value: provider)
-                            .font(.caption)
-                            .foregroundStyle(.blue)
-                    }
-                } else if entryMode == .quickImport && symbol.count == 6 && symbol.allSatisfy({ $0.isNumber }) {
-                    Text("请点击 \"获取净值\" 按钮获取基金净值")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                
-                HStack {
-                    TextField("总投入金额", text: $totalInvested)
+                    TextField("金额", text: $amount)
                         .textFieldStyle(.roundedBorder)
                     Text(currency.symbol)
                         .foregroundStyle(.secondary)
-                }
-                
-                HStack {
-                    TextField("当前市值", text: $currentValue)
-                        .textFieldStyle(.roundedBorder)
-                    Text(currency.symbol)
-                        .foregroundStyle(.secondary)
-                }
-                
-                if let shares = quickImportShares {
-                    LabeledContent("计算份额", value: String(format: "%.4f", shares))
-                        .foregroundStyle(.blue)
-                }
-                
-                if let cost = quickImportAverageCost {
-                    LabeledContent("平均成本", value: String(format: "%.4f", cost))
-                        .foregroundStyle(.blue)
-                }
-                
-                if let invested = Double(totalInvested),
-                   let current = Double(currentValue) {
-                    let gainLoss = current - invested
-                    let percentage = invested > 0 ? (gainLoss / invested) * 100 : 0
-                    LabeledContent("预估盈亏", value: String(format: "%@%.2f (%+.2f%%)",
-                        gainLoss >= 0 ? "+" : "",
-                        gainLoss,
-                        percentage))
-                        .foregroundStyle(gainLoss >= 0 ? .green : .red)
-                }
-                
-            } else if entryMode == .amount && (mode == .add || mode == .buyMore || mode == .edit) {
-                HStack {
-                    TextField("投入金额", text: $amount)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    Text(currency.symbol)
-                        .foregroundStyle(.secondary)
-                }
-                
-                TextField("买入价格", text: $price)
-                    .textFieldStyle(.roundedBorder)
-                
-                if let calculated = calculatedShares {
-                    LabeledContent("计算份额", value: String(format: "%.4f", calculated))
-                        .foregroundStyle(.blue)
                 }
             } else {
-                HStack {
-                    TextField(mode == .sell ? "卖出数量" : "数量", text: $shares)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    if mode == .sell, let position = existingPosition {
-                        Text("/ \(String(format: "%.2f", position.shares))")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("股")
-                            .foregroundStyle(.secondary)
+                // 非现金：原有逻辑
+                if (mode == .add || mode == .buyMore || mode == .edit) {
+                    Picker("录入方式", selection: $entryMode) {
+                        ForEach(EntryMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
                     }
                 }
                 
-                TextField(mode == .sell ? "卖出价格" : "成本价", text: $price)
+                if entryMode == .quickImport && (mode == .add || mode == .buyMore || mode == .edit) {
+                    HStack {
+                        TextField("基金代码", text: $symbol)
+                            .textFieldStyle(.roundedBorder)
+                        
+                        Button(action: fetchFundNav) {
+                            if isFetchingNav {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Text("获取净值")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(symbol.isEmpty || isFetchingNav)
+                    }
+                    
+                    if let nav = fetchedNav, let date = fetchedNavDate {
+                        LabeledContent("当前净值", value: String(format: "%.4f", nav))
+                            .foregroundStyle(.secondary)
+                        LabeledContent("净值日期", value: date)
+                            .foregroundStyle(.secondary)
+                        if let provider = fetchedDataProvider {
+                            LabeledContent("数据来源", value: provider)
+                                .font(.caption)
+                                .foregroundStyle(.blue)
+                        }
+                    } else if entryMode == .quickImport && symbol.count == 6 && symbol.allSatisfy({ $0.isNumber }) {
+                        Text("请点击 \"获取净值\" 按钮获取基金净值")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    
+                    HStack {
+                        TextField("总投入金额", text: $totalInvested)
+                            .textFieldStyle(.roundedBorder)
+                        Text(currency.symbol)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    HStack {
+                        TextField("当前市值", text: $currentValue)
+                            .textFieldStyle(.roundedBorder)
+                        Text(currency.symbol)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    if let shares = quickImportShares {
+                        LabeledContent("计算份额", value: String(format: "%.4f", shares))
+                            .foregroundStyle(.blue)
+                    }
+                    
+                    if let cost = quickImportAverageCost {
+                        LabeledContent("平均成本", value: String(format: "%.4f", cost))
+                            .foregroundStyle(.blue)
+                    }
+                    
+                    if let invested = Double(totalInvested),
+                       let current = Double(currentValue) {
+                        let gainLoss = current - invested
+                        let percentage = invested > 0 ? (gainLoss / invested) * 100 : 0
+                        LabeledContent("预估盈亏", value: String(format: "%@%.2f (%+.2f%%)",
+                            gainLoss >= 0 ? "+" : "",
+                            gainLoss,
+                            percentage))
+                            .foregroundStyle(gainLoss >= 0 ? .green : .red)
+                    }
+                    
+                } else if entryMode == .amount && (mode == .add || mode == .buyMore || mode == .edit) {
+                    HStack {
+                        TextField("投入金额", text: $amount)
+                            .textFieldStyle(.roundedBorder)
+                        
+                        Text(currency.symbol)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    TextField("买入价格", text: $price)
+                        .textFieldStyle(.roundedBorder)
+                    
+                    if let calculated = calculatedShares {
+                        LabeledContent("计算份额", value: String(format: "%.4f", calculated))
+                            .foregroundStyle(.blue)
+                    }
+                } else {
+                    HStack {
+                        TextField(mode == .sell ? "卖出数量" : "数量", text: $shares)
+                            .textFieldStyle(.roundedBorder)
+                        
+                        if mode == .sell, let position = existingPosition {
+                            Text("/ \(String(format: "%.2f", position.shares))")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("股")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    TextField(mode == .sell ? "卖出价格" : "成本价", text: $price)
+                        .textFieldStyle(.roundedBorder)
+                }
+                
+                TextField("手续费 (可选)", text: $fees)
                     .textFieldStyle(.roundedBorder)
             }
-            
-            TextField("手续费 (可选)", text: $fees)
-                .textFieldStyle(.roundedBorder)
         }
     }
     
@@ -380,6 +397,12 @@ struct PositionManagementSheet: View {
     }
     
     private var isValid: Bool {
+        // 现金类型：只需要金额 > 0
+        if assetType == .cash {
+            guard let amountNum = Double(amount), amountNum > 0 else { return false }
+            return true
+        }
+        
         guard !symbol.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
         
         // Quick import mode requires successful NAV fetch
@@ -407,7 +430,7 @@ struct PositionManagementSheet: View {
         
         let initialPrice: Double
         if assetType == .cash {
-            initialPrice = priceNum
+            initialPrice = 1.0
         } else {
             initialPrice = fetchedNav ?? 0
         }

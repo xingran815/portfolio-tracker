@@ -260,12 +260,17 @@ struct PortfolioDetailView: View {
     private var positionsTable: some View {
         Table(of: Position.self) {
             TableColumn("代码") { position in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(position.symbol ?? "-")
-                        .fontWeight(.medium)
-                    Text(position.name ?? "")
-                        .font(.caption)
+                if position.assetType == .cash {
+                    Text("-")
                         .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(position.symbol ?? "-")
+                            .fontWeight(.medium)
+                        Text(position.name ?? "")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .width(min: 100, ideal: 120)
@@ -277,7 +282,10 @@ struct PortfolioDetailView: View {
             .width(60)
             
             TableColumn("市值") { position in
-                if position.currentPrice > 0 {
+                if position.assetType == .cash {
+                    Text(position.totalCost.formattedAsCurrency(currencyCode: position.currencyEnum.code))
+                        .monospacedDigit()
+                } else if position.currentPrice > 0 {
                     Text((position.currentValue ?? 0).formattedAsCurrency(currencyCode: position.currencyEnum.code))
                         .monospacedDigit()
                 } else {
@@ -289,38 +297,52 @@ struct PortfolioDetailView: View {
             .width(100)
             
             TableColumn("盈亏") { position in
-                if position.currentPrice > 0 {
+                if position.assetType == .cash {
+                    Text("-")
+                        .foregroundStyle(.secondary)
+                } else if position.currentPrice > 0 {
                     let profitLoss = position.profitLoss ?? 0
                     Text(profitLoss.formattedAsCurrency(currencyCode: position.currencyEnum.code))
                         .monospacedDigit()
                         .foregroundStyle(profitLoss >= 0 ? .green : .red)
                 } else {
-                    Text("--")
+                    Text("-")
                         .foregroundStyle(.secondary)
                 }
             }
             .width(100)
             
             TableColumn("盈亏%") { position in
-                if position.currentPrice > 0 {
+                if position.assetType == .cash {
+                    Text("-")
+                        .foregroundStyle(.secondary)
+                } else if position.currentPrice > 0 {
                     Text((position.profitLossPercentage ?? 0).formattedAsPercentage())
                         .monospacedDigit()
                         .foregroundStyle((position.profitLoss ?? 0) >= 0 ? .green : .red)
                 } else {
-                    Text("--")
+                    Text("-")
                         .foregroundStyle(.secondary)
                 }
             }
             .width(70)
             
             TableColumn("数量") { position in
-                Text(String(format: "%.2f", position.shares))
-                    .monospacedDigit()
+                if position.assetType == .cash {
+                    Text("-")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(String(format: "%.2f", position.shares))
+                        .monospacedDigit()
+                }
             }
             .width(80)
             
             TableColumn("现价") { position in
-                if position.currentPrice > 0 {
+                if position.assetType == .cash {
+                    Text("-")
+                        .foregroundStyle(.secondary)
+                } else if position.currentPrice > 0 {
                     Text(position.currentPrice.formattedAsCurrency(currencyCode: position.currencyEnum.code))
                         .monospacedDigit()
                 } else {
