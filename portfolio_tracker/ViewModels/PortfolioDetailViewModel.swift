@@ -45,7 +45,7 @@ final class PortfolioDetailViewModel {
     
     // MARK: - Dependencies
     
-    private let viewContext: NSManagedObjectContext
+    let viewContext: NSManagedObjectContext
     private let dataProvider: any DataProviderProtocol
     private let chinaFundProvider: ChinaFundProvider
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "PortfolioDetailViewModel")
