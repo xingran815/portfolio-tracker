@@ -37,25 +37,6 @@ final class ViewModelSyncTests: XCTestCase {
     
     // MARK: - PortfolioListViewModel Tests
     
-    func testPortfolioListViewModel_loadPortfolios() throws {
-        print("🟣 TEST: testPortfolioListViewModel_loadPortfolios")
-        
-        let portfolio1 = Portfolio(context: viewContext)
-        portfolio1.id = UUID()
-        portfolio1.name = "Portfolio 1"
-        
-        let portfolio2 = Portfolio(context: viewContext)
-        portfolio2.id = UUID()
-        portfolio2.name = "Portfolio 2"
-        
-        try viewContext.save()
-        
-        let viewModel = PortfolioListViewModel(context: viewContext)
-        
-        print("🟣 ViewModel loaded \(viewModel.portfolios.count) portfolios")
-        XCTAssertEqual(viewModel.portfolios.count, 2, "Should load 2 portfolios")
-    }
-    
     func testPortfolioListViewModel_createPortfolio() throws {
         print("🟣 TEST: testPortfolioListViewModel_createPortfolio")
         
@@ -63,9 +44,13 @@ final class ViewModelSyncTests: XCTestCase {
         
         viewModel.createPortfolio(name: "New Portfolio")
         
-        print("🟣 After create: viewModel.portfolios.count = \(viewModel.portfolios.count)")
-        XCTAssertEqual(viewModel.portfolios.count, 1, "Should have 1 portfolio")
-        XCTAssertEqual(viewModel.portfolios.first?.name, "New Portfolio")
+        // Verify portfolio was created in CoreData
+        let request = Portfolio.fetchRequest()
+        let portfolios = try viewContext.fetch(request)
+        
+        print("🟣 After create: CoreData has \(portfolios.count) portfolios")
+        XCTAssertEqual(portfolios.count, 1, "Should have 1 portfolio")
+        XCTAssertEqual(portfolios.first?.name, "New Portfolio")
     }
     
     func testPortfolioListViewModel_deletePortfolio() throws {
@@ -79,13 +64,19 @@ final class ViewModelSyncTests: XCTestCase {
         
         let viewModel = PortfolioListViewModel(context: viewContext)
         
-        print("🟣 Before delete: viewModel.portfolios.count = \(viewModel.portfolios.count)")
-        XCTAssertEqual(viewModel.portfolios.count, 1)
+        // Verify portfolio exists
+        var request = Portfolio.fetchRequest()
+        var portfolios = try viewContext.fetch(request)
+        print("🟣 Before delete: CoreData has \(portfolios.count) portfolios")
+        XCTAssertEqual(portfolios.count, 1)
         
         viewModel.deletePortfolio(portfolio)
         
-        print("🟣 After delete: viewModel.portfolios.count = \(viewModel.portfolios.count)")
-        XCTAssertEqual(viewModel.portfolios.count, 0, "Should have 0 portfolios after delete")
+        // Verify portfolio was deleted from CoreData
+        request = Portfolio.fetchRequest()
+        portfolios = try viewContext.fetch(request)
+        print("🟣 After delete: CoreData has \(portfolios.count) portfolios")
+        XCTAssertEqual(portfolios.count, 0, "Should have 0 portfolios after delete")
     }
     
     // MARK: - PortfolioDetailViewModel Tests
@@ -175,8 +166,8 @@ final class ViewModelSyncTests: XCTestCase {
     
     // MARK: - Cross-ViewModel Sync Tests
     
-    func testCrossViewModel_addPosition_updatesPortfolioInBothViewModels() throws {
-        print("🟣 TEST: testCrossViewModel_addPosition_updatesPortfolioInBothViewModels")
+    func testCrossViewModel_addPosition_updatesPortfolioInCoreData() throws {
+        print("🟣 TEST: testCrossViewModel_addPosition_updatesPortfolioInCoreData")
         
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
@@ -184,13 +175,12 @@ final class ViewModelSyncTests: XCTestCase {
         
         try viewContext.save()
         
-        let listViewModel = PortfolioListViewModel(context: viewContext)
         let detailViewModel = PortfolioDetailViewModel(context: viewContext)
         
         detailViewModel.setPortfolio(portfolio)
         
         print("🟣 Before add:")
-        print("🟣   listViewModel portfolio.positions.count = \(listViewModel.portfolios.first?.positions?.count ?? -1)")
+        print("🟣   portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
         print("🟣   detailViewModel.positions.count = \(detailViewModel.positions.count)")
         
         try detailViewModel.addPositionWithTransaction(
@@ -202,13 +192,14 @@ final class ViewModelSyncTests: XCTestCase {
             costBasis: 150
         )
         
-        listViewModel.loadPortfolios()
+        // Refresh portfolio from CoreData
+        viewContext.refresh(portfolio, mergeChanges: false)
         
         print("🟣 After add:")
-        print("🟣   listViewModel portfolio.positions.count = \(listViewModel.portfolios.first?.positions?.count ?? -1)")
+        print("🟣   portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
         print("🟣   detailViewModel.positions.count = \(detailViewModel.positions.count)")
         
         XCTAssertEqual(detailViewModel.positions.count, 1, "DetailViewModel should have 1 position")
-        XCTAssertEqual(listViewModel.portfolios.first?.positions?.count, 1, "ListViewModel's portfolio should have 1 position")
+        XCTAssertEqual(portfolio.positions?.count, 1, "Portfolio should have 1 position in CoreData")
     }
 }

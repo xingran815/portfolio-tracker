@@ -12,6 +12,12 @@ import CoreData
 struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
     
+    @FetchRequest(
+        sortDescriptors: [SortDescriptor(\Portfolio.name)],
+        animation: .default
+    )
+    private var portfolios: FetchedResults<Portfolio>
+    
     // ViewModels
     @State private var listViewModel = PortfolioListViewModel()
     @State private var chatViewModel = ChatViewModel()
@@ -19,16 +25,21 @@ struct ContentView: View {
     // UI State
     @State private var showingSettingsWindow = false
     
+    var selectedPortfolio: Portfolio? {
+        guard let id = listViewModel.selectedPortfolioId else { return nil }
+        return portfolios.first { $0.id == id }
+    }
+    
     var body: some View {
         NavigationSplitView {
             // Sidebar: Portfolio list
             PortfolioListView(viewModel: listViewModel)
         } content: {
             // Content: Portfolio detail
-            PortfolioDetailView(portfolio: listViewModel.selectedPortfolio)
+            PortfolioDetailView(portfolio: selectedPortfolio)
         }         detail: {
             // Detail: Chat/Analytics
-            ChatView(viewModel: chatViewModel, portfolio: listViewModel.selectedPortfolio)
+            ChatView(viewModel: chatViewModel, portfolio: selectedPortfolio)
         }
         .navigationSplitViewStyle(.balanced)
         .sheet(isPresented: $showingSettingsWindow) {
@@ -42,15 +53,9 @@ struct ContentView: View {
                 .help("设置")
             }
         }
-        .onAppear {
-            // Set up chat view model with initial portfolio
-            if let selectedPortfolio = listViewModel.selectedPortfolio {
-                chatViewModel.setPortfolio(selectedPortfolio)
-            }
-        }
-        .onChange(of: listViewModel.selectedPortfolio?.id) { _, _ in
+        .onChange(of: listViewModel.selectedPortfolioId) { _, _ in
             // Update chat context when portfolio changes
-            if let selectedPortfolio = listViewModel.selectedPortfolio {
+            if let selectedPortfolio = selectedPortfolio {
                 chatViewModel.setPortfolio(selectedPortfolio)
             }
         }

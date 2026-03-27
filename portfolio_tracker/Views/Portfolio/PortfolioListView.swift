@@ -8,9 +8,16 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import CoreData
-import Combine
 
 struct PortfolioListView: View {
+    @Environment(\.managedObjectContext) private var viewContext
+    
+    @FetchRequest(
+        sortDescriptors: [SortDescriptor(\Portfolio.name)],
+        animation: .default
+    )
+    private var portfolios: FetchedResults<Portfolio>
+    
     @State private var viewModel: PortfolioListViewModel
     @State private var showingCreateSheet = false
     @State private var showingImportPicker = false
@@ -21,8 +28,6 @@ struct PortfolioListView: View {
     @State private var showingDeleteConfirmation = false
     @State private var exchangeRates: [String: Double] = [:]
     @State private var exchangeRateError: String?
-    @State private var cancellables = Set<AnyCancellable>()
-    @State private var refreshTask: Task<Void, Never>?
     
     init(viewModel: PortfolioListViewModel? = nil) {
         _viewModel = State(initialValue: viewModel ?? PortfolioListViewModel())
@@ -31,10 +36,9 @@ struct PortfolioListView: View {
     var body: some View {
         List(selection: $viewModel.selectedPortfolioId) {
             Section("投资组合") {
-                ForEach(viewModel.portfolios) { portfolio in
+                ForEach(portfolios) { portfolio in
                     NavigationLink(value: portfolio.id) {
                         PortfolioRowView(portfolio: portfolio, exchangeRates: exchangeRates)
-                            .id("\(portfolio.id?.uuidString ?? "")-\(portfolio.positions?.count ?? 0)-\(portfolio.updatedAt?.timeIntervalSince1970 ?? 0)")
                     }
                     .tag(portfolio.id)
                     .contextMenu {
@@ -62,7 +66,6 @@ struct PortfolioListView: View {
             Task {
                 await fetchExchangeRates()
             }
-            setupCoreDataObserver()
         }
         .toolbar {
             ToolbarItemGroup {
@@ -83,7 +86,6 @@ struct PortfolioListView: View {
         }
         .sheet(item: $portfolioToEdit) { portfolio in
             EditPortfolioView(portfolio: portfolio) { _ in
-                viewModel.refreshPortfolios()
             }
         }
         .fileImporter(
@@ -116,7 +118,7 @@ struct PortfolioListView: View {
             }
         }
         .overlay {
-            if viewModel.portfolios.isEmpty {
+            if portfolios.isEmpty {
                 emptyStateView
             }
         }
@@ -181,38 +183,10 @@ struct PortfolioListView: View {
             print("Failed to fetch exchange rates: \(error)")
         }
     }
-    
-    private func setupCoreDataObserver() {
-        NotificationCenter.default.publisher(
-            for: NSNotification.Name.NSManagedObjectContextObjectsDidChange,
-            object: viewModel.viewContext
-        )
-        .receive(on: DispatchQueue.main)
-        .sink { notification in
-            let hasInserted = (notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject>)?
-                .contains { $0 is Portfolio || $0 is Position } ?? false
-            let hasUpdated = (notification.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject>)?
-                .contains { $0 is Position } ?? false
-            let hasDeleted = (notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject>)?
-                .contains { $0 is Position } ?? false
-            
-            guard hasInserted || hasUpdated || hasDeleted else { return }
-            
-            refreshTask?.cancel()
-            refreshTask = Task {
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                if !Task.isCancelled {
-                    viewModel.refreshPortfolios()
-                    await fetchExchangeRates()
-                }
-            }
-        }
-        .store(in: &cancellables)
-    }
 }
 
 struct PortfolioRowView: View {
-    let portfolio: Portfolio
+    @ObservedObject var portfolio: Portfolio
     let exchangeRates: [String: Double]
     
     var positionsArray: [Position] {
