@@ -510,6 +510,7 @@ struct PositionManagementSheet: View {
     PositionManagementSheet(mode: .add, viewModel: PortfolioDetailViewModel())
 }
 
+@MainActor
 private func makePreviewPosition() -> Position {
     let context = PersistenceController.preview.container.viewContext
     let position = Position(context: context)
