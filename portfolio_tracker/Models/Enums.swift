@@ -22,6 +22,42 @@ public enum RiskProfile: String, CaseIterable, Codable, Sendable {
     }
 }
 
+/// Currency for portfolio display
+public enum Currency: String, CaseIterable, Codable, Sendable {
+    case cny = "CNY"
+    case usd = "USD"
+    case eur = "EUR"
+    case hkd = "HKD"
+    case gbp = "GBP"
+    case jpy = "JPY"
+    
+    public var displayName: String {
+        switch self {
+        case .cny: return "人民币 (¥)"
+        case .usd: return "美元 ($)"
+        case .eur: return "欧元 (€)"
+        case .hkd: return "港币 (HK$)"
+        case .gbp: return "英镑 (£)"
+        case .jpy: return "日元 (¥)"
+        }
+    }
+    
+    public var symbol: String {
+        switch self {
+        case .cny: return "¥"
+        case .usd: return "$"
+        case .eur: return "€"
+        case .hkd: return "HK$"
+        case .gbp: return "£"
+        case .jpy: return "¥"
+        }
+    }
+    
+    public var code: String {
+        return self.rawValue
+    }
+}
+
 /// Type of financial asset
 public enum AssetType: String, CaseIterable, Codable, Sendable {
     case stock
@@ -64,6 +100,14 @@ public enum Market: String, CaseIterable, Codable, Sendable {
         case .cn: return "CNY"
         }
     }
+    
+    public var currencySymbol: String {
+        switch self {
+        case .us: return "$"
+        case .hk: return "HK$"
+        case .cn: return "¥"
+        }
+    }
 }
 
 /// Transaction type
@@ -77,6 +121,21 @@ public enum TransactionType: String, CaseIterable, Codable, Sendable {
         case .buy: return "买入"
         case .sell: return "卖出"
         case .dividend: return "分红"
+        }
+    }
+}
+
+/// Position entry mode for recording how position was added
+public enum EntryMode: String, CaseIterable, Codable, Sendable {
+    case quickImport = "quick_import"
+    case amount = "amount"
+    case shares = "shares"
+    
+    public var displayName: String {
+        switch self {
+        case .quickImport: return "快捷导入"
+        case .amount: return "按金额"
+        case .shares: return "按份额"
         }
     }
 }
@@ -105,6 +164,24 @@ public enum PlanStatus: String, CaseIterable, Codable, Sendable {
         case .draft: return "草稿"
         case .executed: return "已执行"
         case .cancelled: return "已取消"
+        }
+    }
+}
+
+/// Position management errors
+public enum PositionError: LocalizedError, Sendable {
+    case insufficientShares(available: Double, requested: Double)
+    case positionNotFound
+    case invalidInput(String)
+    
+    public var errorDescription: String? {
+        switch self {
+        case .insufficientShares(let available, let requested):
+            return "持仓不足：可用 \(String(format: "%.2f", available)) 股，请求卖出 \(String(format: "%.2f", requested)) 股"
+        case .positionNotFound:
+            return "未找到该持仓"
+        case .invalidInput(let message):
+            return "输入无效：\(message)"
         }
     }
 }

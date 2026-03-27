@@ -6,16 +6,25 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
+import CoreData
+import Combine
 
-/// Sidebar view showing list of portfolios
 struct PortfolioListView: View {
     @State private var viewModel: PortfolioListViewModel
-    @State private var showingAddSheet = false
-    @State private var newPortfolioName = ""
-    @State private var selectedRiskProfile: RiskProfile = .moderate
+    @State private var showingCreateSheet = false
+    @State private var showingImportPicker = false
+    @State private var importError: String?
+    @State private var showingImportError = false
+    @State private var portfolioToEdit: Portfolio?
+    @State private var portfolioToDelete: Portfolio?
+    @State private var showingDeleteConfirmation = false
+    @State private var exchangeRates: [String: Double] = [:]
+    @State private var exchangeRateError: String?
+    @State private var cancellables = Set<AnyCancellable>()
+    @State private var refreshTask: Task<Void, Never>?
     
     init(viewModel: PortfolioListViewModel? = nil) {
-        // Initialize with provided viewModel or create new one
         _viewModel = State(initialValue: viewModel ?? PortfolioListViewModel())
     }
     
@@ -24,85 +33,93 @@ struct PortfolioListView: View {
             Section("投资组合") {
                 ForEach(viewModel.portfolios) { portfolio in
                     NavigationLink(value: portfolio.id) {
-                        PortfolioRowView(portfolio: portfolio)
+                        PortfolioRowView(portfolio: portfolio, exchangeRates: exchangeRates)
+                            .id("\(portfolio.id?.uuidString ?? "")-\(portfolio.positions?.count ?? 0)-\(portfolio.updatedAt?.timeIntervalSince1970 ?? 0)")
                     }
                     .tag(portfolio.id)
-                }
-                .onDelete { indexSet in
-                    viewModel.deletePortfolios(at: indexSet)
+                    .contextMenu {
+                        Button {
+                            portfolioToEdit = portfolio
+                        } label: {
+                            Label("编辑", systemImage: "pencil")
+                        }
+                        
+                        Divider()
+                        
+                        Button(role: .destructive) {
+                            portfolioToDelete = portfolio
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                    }
                 }
             }
         }
         .listStyle(.sidebar)
         .navigationTitle("投资组合")
+        .onAppear {
+            Task {
+                await fetchExchangeRates()
+            }
+            setupCoreDataObserver()
+        }
         .toolbar {
-            ToolbarItem {
-                Button(action: { showingAddSheet = true }) {
+            ToolbarItemGroup {
+                Button(action: { showingImportPicker = true }) {
+                    Label("导入", systemImage: "arrow.down.doc")
+                }
+                .help("从 Markdown 文件导入")
+                
+                Button(action: { showingCreateSheet = true }) {
                     Label("新建组合", systemImage: "plus")
                 }
             }
         }
-        .sheet(isPresented: $showingAddSheet) {
-            addPortfolioSheet
+        .sheet(isPresented: $showingCreateSheet) {
+            CreatePortfolioView { config in
+                viewModel.createFromConfig(config)
+            }
+        }
+        .sheet(item: $portfolioToEdit) { portfolio in
+            EditPortfolioView(portfolio: portfolio) { _ in
+                viewModel.refreshPortfolios()
+            }
+        }
+        .fileImporter(
+            isPresented: $showingImportPicker,
+            allowedContentTypes: [UTType(filenameExtension: "md")!, .plainText],
+            allowsMultipleSelection: false
+        ) { result in
+            handleImportResult(result)
+        }
+        .alert("导入错误", isPresented: $showingImportError) {
+            Button("确定", role: .cancel) {}
+        } message: {
+            Text(importError ?? "未知错误")
         }
         .alert("错误", isPresented: $viewModel.showError) {
             Button("确定", role: .cancel) {}
         } message: {
             Text(viewModel.errorMessage ?? "发生错误")
         }
+        .alert("确认删除", isPresented: $showingDeleteConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("删除", role: .destructive) {
+                if let portfolio = portfolioToDelete {
+                    viewModel.deletePortfolio(portfolio)
+                }
+            }
+        } message: {
+            if let portfolio = portfolioToDelete {
+                Text("确定要删除投资组合 \"\(portfolio.name ?? "")\" 吗？此操作无法撤销。")
+            }
+        }
         .overlay {
             if viewModel.portfolios.isEmpty {
                 emptyStateView
             }
         }
-    }
-    
-    // MARK: - Subviews
-    
-    private var addPortfolioSheet: some View {
-        NavigationStack {
-            Form {
-                Section("组合信息") {
-                    TextField("组合名称", text: $newPortfolioName)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    Picker("风险偏好", selection: $selectedRiskProfile) {
-                        ForEach(RiskProfile.allCases, id: \.self) { profile in
-                            Text(profile.displayName).tag(profile)
-                        }
-                    }
-                }
-                
-                Section {
-                    Text("创建后将可以添加持仓和设置目标配置。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .formStyle(.grouped)
-            .navigationTitle("新建组合")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") {
-                        showingAddSheet = false
-                        newPortfolioName = ""
-                    }
-                }
-                
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("创建") {
-                        viewModel.createPortfolio(
-                            name: newPortfolioName,
-                            riskProfile: selectedRiskProfile
-                        )
-                        showingAddSheet = false
-                        newPortfolioName = ""
-                    }
-                    .disabled(newPortfolioName.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-        }
-        .frame(minWidth: 400, minHeight: 250)
     }
     
     private var emptyStateView: some View {
@@ -115,18 +132,108 @@ struct PortfolioListView: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
             
-            Text("点击 + 按钮创建您的第一个投资组合")
+            Text("点击 + 按钮创建，或点击 ↓ 导入 Markdown 文件")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
+    }
+    
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            importFromFile(url)
+        case .failure(let error):
+            importError = error.localizedDescription
+            showingImportError = true
+        }
+    }
+    
+    private func importFromFile(_ url: URL) {
+        guard url.startAccessingSecurityScopedResource() else {
+            importError = "无法访问文件"
+            showingImportError = true
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+        
+        do {
+            let content = try String(contentsOf: url, encoding: .utf8)
+            let parser = MDParser()
+            let config = try parser.parse(content)
+            viewModel.createFromConfig(config)
+        } catch let error as MDParserError {
+            importError = "解析错误: \(error.localizedDescription)"
+            showingImportError = true
+        } catch {
+            importError = "读取文件失败: \(error.localizedDescription)"
+            showingImportError = true
+        }
+    }
+    
+    private func fetchExchangeRates() async {
+        do {
+            exchangeRates = try await ExchangeRateProvider.shared.fetchRates(base: "USD")
+            exchangeRateError = nil
+        } catch {
+            exchangeRateError = error.localizedDescription
+            print("Failed to fetch exchange rates: \(error)")
+        }
+    }
+    
+    private func setupCoreDataObserver() {
+        NotificationCenter.default.publisher(
+            for: NSNotification.Name.NSManagedObjectContextObjectsDidChange,
+            object: viewModel.viewContext
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { notification in
+            let hasInserted = (notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject>)?
+                .contains { $0 is Portfolio || $0 is Position } ?? false
+            let hasUpdated = (notification.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject>)?
+                .contains { $0 is Position } ?? false
+            let hasDeleted = (notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject>)?
+                .contains { $0 is Position } ?? false
+            
+            guard hasInserted || hasUpdated || hasDeleted else { return }
+            
+            refreshTask?.cancel()
+            refreshTask = Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                if !Task.isCancelled {
+                    viewModel.refreshPortfolios()
+                    await fetchExchangeRates()
+                }
+            }
+        }
+        .store(in: &cancellables)
     }
 }
 
-// MARK: - Portfolio Row
-
-/// Row view for a single portfolio in the list
 struct PortfolioRowView: View {
     let portfolio: Portfolio
+    let exchangeRates: [String: Double]
+    
+    var positionsArray: [Position] {
+        (portfolio.positions as? Set<Position>)?.sorted { ($0.currentValue ?? 0) > ($1.currentValue ?? 0) } ?? []
+    }
+    
+    var convertedValue: Double {
+        if exchangeRates.isEmpty {
+            return positionsArray.reduce(0) { $0 + ($1.currentValue ?? 0) }
+        }
+        return portfolio.totalValueIn(currency: portfolio.currency, rates: exchangeRates, positions: positionsArray)
+    }
+    
+    var convertedProfitLoss: Double {
+        if exchangeRates.isEmpty {
+            let totalValue = positionsArray.reduce(0) { $0 + ($1.currentValue ?? 0) }
+            let totalCost = positionsArray.reduce(0) { $0 + $1.totalCost }
+            return totalValue - totalCost
+        }
+        return portfolio.totalProfitLossIn(currency: portfolio.currency, rates: exchangeRates, positions: positionsArray)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -140,20 +247,21 @@ struct PortfolioRowView: View {
             }
             
             HStack {
-                Text(portfolio.totalValue.formattedAsCurrency())
+                Text(convertedValue.formattedAsCurrency(currencyCode: portfolio.currency.code))
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                 
                 Spacer()
                 
                 PriceChangeLabel(
-                    value: portfolio.totalProfitLoss,
-                    percentage: portfolio.profitLossPercentage
+                    value: convertedProfitLoss,
+                    percentage: portfolio.profitLossPercentage,
+                    currencyCode: portfolio.currency.code
                 )
             }
             
             HStack {
-                let positionCount = (portfolio.positions as? Set<Position>)?.count ?? 0
+                let positionCount = positionsArray.count
                 Label("\(positionCount) 持仓", systemImage: "number")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -169,9 +277,6 @@ struct PortfolioRowView: View {
     }
 }
 
-// MARK: - Risk Badge
-
-/// Small badge showing risk profile
 struct RiskBadge: View {
     let profile: RiskProfile
     
@@ -194,8 +299,6 @@ struct RiskBadge: View {
             .clipShape(Capsule())
     }
 }
-
-// MARK: - Preview
 
 #Preview {
     NavigationStack {

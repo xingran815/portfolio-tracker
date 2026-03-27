@@ -8,12 +8,23 @@
 import SwiftUI
 import Charts
 
+struct PositionSheetItem: Identifiable {
+    let id = UUID()
+    let position: Position?
+    let mode: PositionManagementMode
+}
+
 /// Detail view showing portfolio positions and analytics
 struct PortfolioDetailView: View {
     @State private var viewModel = PortfolioDetailViewModel()
-    @State private var showingAddPositionSheet = false
     @State private var showingRebalancingView = false
     @State private var showingSettingsWindow = false
+    @State private var showingEditSheet = false
+    @State private var positionSheetItem: PositionSheetItem?
+    @State private var showingDeleteConfirmation = false
+    @State private var positionToDelete: Position?
+    @State private var exchangeRates: [String: Double] = [:]
+    @State private var exchangeRateError: String?
     
     let portfolio: Portfolio?
     
@@ -27,19 +38,51 @@ struct PortfolioDetailView: View {
                 contentView(portfolio: portfolio)
                     .onAppear {
                         viewModel.setPortfolio(portfolio)
+                        Task {
+                            await fetchExchangeRates()
+                        }
                     }
                     .onChange(of: portfolio.id) { _, _ in
                         viewModel.setPortfolio(portfolio)
+                        Task {
+                            await fetchExchangeRates()
+                        }
                     }
             } else {
                 emptyStateView
             }
         }
-        .sheet(isPresented: $showingAddPositionSheet) {
-            AddPositionSheet(viewModel: viewModel)
+        .sheet(item: $positionSheetItem) { item in
+            PositionManagementSheet(
+                mode: item.mode,
+                viewModel: viewModel,
+                existingPosition: item.position
+            )
         }
         .sheet(isPresented: $showingRebalancingView) {
             RebalancingView(portfolio: portfolio)
+        }
+        .sheet(isPresented: $showingEditSheet) {
+            if let portfolio = portfolio {
+                EditPortfolioView(portfolio: portfolio) { _ in
+                    viewModel.setPortfolio(portfolio)
+                    Task {
+                        await fetchExchangeRates()
+                    }
+                }
+            }
+        }
+        .alert("确认删除", isPresented: $showingDeleteConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("删除", role: .destructive) {
+                if let position = positionToDelete {
+                    viewModel.deletePosition(position)
+                }
+            }
+        } message: {
+            if let position = positionToDelete {
+                Text("确定要删除持仓 \(position.symbol ?? "") 吗？此操作无法撤销。")
+            }
         }
     }
     
@@ -64,12 +107,18 @@ struct PortfolioDetailView: View {
         .navigationTitle(portfolio.name ?? "投资组合")
         .toolbar {
             ToolbarItemGroup {
+                Button(action: { showingEditSheet = true }) {
+                    Label("编辑", systemImage: "pencil")
+                }
+                
                 Button(action: { showingRebalancingView = true }) {
                     Label("再平衡", systemImage: "arrow.left.arrow.right")
                 }
                 .disabled(viewModel.positions.isEmpty)
                 
-                Button(action: { showingAddPositionSheet = true }) {
+                Button(action: {
+                    positionSheetItem = PositionSheetItem(position: nil, mode: .add)
+                }) {
                     Label("添加持仓", systemImage: "plus")
                 }
                 
@@ -84,33 +133,74 @@ struct PortfolioDetailView: View {
     }
     
     private func summarySection(portfolio: Portfolio) -> some View {
-        LazyVGrid(columns: [
-            GridItem(.flexible()),
-            GridItem(.flexible()),
-            GridItem(.flexible())
-        ], spacing: 16) {
+        let convertedValue: Double
+        let convertedCost: Double
+        
+        if exchangeRates.isEmpty {
+            convertedValue = viewModel.totalValue
+            convertedCost = viewModel.totalCost
+        } else {
+            convertedValue = portfolio.totalValueIn(currency: portfolio.currency, rates: exchangeRates, positions: viewModel.positions)
+            convertedCost = portfolio.totalCostIn(currency: portfolio.currency, rates: exchangeRates, positions: viewModel.positions)
+        }
+        
+        let convertedProfitLoss = convertedValue - convertedCost
+        let profitLossPercent = convertedCost > 0 ? convertedProfitLoss / convertedCost : 0
+        let pendingPriceCount = viewModel.positions.filter { $0.currentPrice == 0 && $0.assetType != .cash }.count
+        
+        return VStack(spacing: 12) {
             SummaryCard(
                 title: "总市值",
-                value: viewModel.totalValue.formattedAsCurrency(),
+                value: formatCurrency(convertedValue, currency: portfolio.currency),
                 icon: "dollarsign.circle.fill",
                 color: .blue
             )
             
             SummaryCard(
                 title: "总成本",
-                value: viewModel.totalCost.formattedAsCurrency(),
+                value: formatCurrency(convertedCost, currency: portfolio.currency),
                 icon: "bag.fill",
                 color: .gray
             )
             
             SummaryCard(
                 title: "盈亏",
-                value: viewModel.totalProfitLoss.formattedAsCurrency(),
-                subtitle: viewModel.profitLossPercentage.formattedAsPercentage(),
-                icon: viewModel.totalProfitLoss >= 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill",
-                color: viewModel.totalProfitLoss >= 0 ? .green : .red
+                value: formatCurrency(convertedProfitLoss, currency: portfolio.currency),
+                subtitle: profitLossPercent.formattedAsPercentage(),
+                icon: convertedProfitLoss >= 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill",
+                color: convertedProfitLoss >= 0 ? .green : .red
             )
+            
+            if pendingPriceCount > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("\(pendingPriceCount) 个持仓价格待更新")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
+            }
+            
+            if exchangeRateError != nil {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("汇率获取失败，多币种资产显示可能不准确")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
+            }
         }
+    }
+    
+    private func formatCurrency(_ value: Double, currency: Currency) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency.code
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value)) ?? "\(currency.symbol)\(String(format: "%.2f", value))"
     }
     
     private var allocationSection: some View {
@@ -125,7 +215,7 @@ struct PortfolioDetailView: View {
                     angularInset: 1.5
                 )
                 .cornerRadius(4)
-                .foregroundStyle(by: .value("Symbol", position.symbol ?? "Unknown"))
+                .foregroundStyle(by: .value("Name", position.name ?? position.symbol ?? "Unknown"))
             }
             .frame(height: 200)
             .chartLegend(position: .trailing, alignment: .center)
@@ -170,12 +260,17 @@ struct PortfolioDetailView: View {
     private var positionsTable: some View {
         Table(of: Position.self) {
             TableColumn("代码") { position in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(position.symbol ?? "-")
-                        .fontWeight(.medium)
-                    Text(position.name ?? "")
-                        .font(.caption)
+                if position.assetType == .cash {
+                    Text("-")
                         .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(position.symbol ?? "-")
+                            .fontWeight(.medium)
+                        Text(position.name ?? "")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .width(min: 100, ideal: 120)
@@ -186,40 +281,124 @@ struct PortfolioDetailView: View {
             }
             .width(60)
             
+            TableColumn("市值") { position in
+                if position.assetType == .cash {
+                    Text(position.totalCost.formattedAsCurrency(currencyCode: position.currencyEnum.code))
+                        .monospacedDigit()
+                } else if position.currentPrice > 0 {
+                    Text((position.currentValue ?? 0).formattedAsCurrency(currencyCode: position.currencyEnum.code))
+                        .monospacedDigit()
+                } else {
+                    Text("待更新")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                }
+            }
+            .width(100)
+            
+            TableColumn("盈亏") { position in
+                if position.assetType == .cash {
+                    Text("-")
+                        .foregroundStyle(.secondary)
+                } else if position.currentPrice > 0 {
+                    let profitLoss = position.profitLoss ?? 0
+                    Text(profitLoss.formattedAsCurrency(currencyCode: position.currencyEnum.code))
+                        .monospacedDigit()
+                        .foregroundStyle(profitLoss >= 0 ? .green : .red)
+                } else {
+                    Text("-")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .width(100)
+            
+            TableColumn("盈亏%") { position in
+                if position.assetType == .cash {
+                    Text("-")
+                        .foregroundStyle(.secondary)
+                } else if position.currentPrice > 0 {
+                    Text((position.profitLossPercentage ?? 0).formattedAsPercentage())
+                        .monospacedDigit()
+                        .foregroundStyle((position.profitLoss ?? 0) >= 0 ? .green : .red)
+                } else {
+                    Text("-")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .width(70)
+            
             TableColumn("数量") { position in
-                Text(String(format: "%.2f", position.shares))
-                    .monospacedDigit()
+                if position.assetType == .cash {
+                    Text("-")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(String(format: "%.2f", position.shares))
+                        .monospacedDigit()
+                }
             }
             .width(80)
             
             TableColumn("现价") { position in
-                Text(position.currentPrice.formattedAsCurrency())
-                    .monospacedDigit()
+                if position.assetType == .cash {
+                    Text("-")
+                        .foregroundStyle(.secondary)
+                } else if position.currentPrice > 0 {
+                    Text(position.currentPrice.formattedAsCurrency(currencyCode: position.currencyEnum.code))
+                        .monospacedDigit()
+                } else {
+                    Text("待更新")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                }
             }
             .width(100)
             
-            TableColumn("市值") { position in
-                Text((position.currentValue ?? 0).formattedAsCurrency())
+            TableColumn("总投入") { position in
+                Text(position.totalCost.formattedAsCurrency(currencyCode: position.currencyEnum.code))
                     .monospacedDigit()
-            }
-            .width(100)
-            
-            TableColumn("权重") { position in
-                Text((position.weightInPortfolio ?? 0).formattedAsPercentage())
-                    .monospacedDigit()
-            }
-            .width(70)
-            
-            TableColumn("盈亏") { position in
-                PriceChangeLabel(
-                    value: position.profitLoss ?? 0,
-                    percentage: position.profitLossPercentage ?? 0
-                )
             }
             .width(100)
         } rows: {
             ForEach(viewModel.positions) { position in
                 TableRow(position)
+                    .contextMenu {
+                        Button {
+                            positionSheetItem = PositionSheetItem(position: position, mode: .buyMore)
+                        } label: {
+                            Label("加仓", systemImage: "plus.circle")
+                        }
+                        
+                        Button {
+                            positionSheetItem = PositionSheetItem(position: position, mode: .sell)
+                        } label: {
+                            Label("卖出", systemImage: "minus.circle")
+                        }
+                        
+                        Divider()
+                        
+                        Button {
+                            positionSheetItem = PositionSheetItem(position: position, mode: .edit)
+                        } label: {
+                            Label("编辑", systemImage: "pencil")
+                        }
+                        
+                        Button {
+                            Task {
+                                await viewModel.updatePrice(for: position)
+                            }
+                        } label: {
+                            Label("更新价格", systemImage: "arrow.clockwise")
+                        }
+                        
+                        Divider()
+                        
+                        Button(role: .destructive) {
+                            positionToDelete = position
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                    }
             }
         }
         .frame(minHeight: 200)
@@ -230,6 +409,16 @@ struct PortfolioDetailView: View {
             Label("选择投资组合", systemImage: "briefcase")
         } description: {
             Text("从左侧列表选择一个投资组合查看详情")
+        }
+    }
+    
+    private func fetchExchangeRates() async {
+        do {
+            exchangeRates = try await ExchangeRateProvider.shared.fetchRates(base: "USD")
+            exchangeRateError = nil
+        } catch {
+            exchangeRateError = error.localizedDescription
+            print("Failed to fetch exchange rates: \(error)")
         }
     }
 }
@@ -244,120 +433,30 @@ struct SummaryCard: View {
     let color: Color
     
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: icon)
                     .foregroundStyle(color)
-                Spacer()
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
             
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+            Text(value)
+                .font(.title2)
+                .fontWeight(.bold)
+                .lineLimit(1)
+            
+            if let subtitle = subtitle {
+                Text(subtitle)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                
-                Text(value)
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                
-                if let subtitle = subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(color)
-                }
+                    .foregroundStyle(color)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(color.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-// MARK: - Add Position Sheet
-
-struct AddPositionSheet: View {
-    var viewModel: PortfolioDetailViewModel
-    @Environment(\.dismiss) private var dismiss
-    
-    @State private var symbol = ""
-    @State private var name = ""
-    @State private var assetType: AssetType = .stock
-    @State private var market: Market = .us
-    @State private var shares = ""
-    @State private var costBasis = ""
-    
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("基本信息") {
-                    TextField("代码 (如 AAPL)", text: $symbol)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    TextField("名称", text: $name)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    Picker("资产类型", selection: $assetType) {
-                        ForEach(AssetType.allCases, id: \.self) { type in
-                            Text(type.displayName).tag(type)
-                        }
-                    }
-                    
-                    Picker("市场", selection: $market) {
-                        ForEach(Market.allCases, id: \.self) { m in
-                            Text(m.displayName).tag(m)
-                        }
-                    }
-                }
-                
-                Section("持仓") {
-                    TextField("数量", text: $shares)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    TextField("成本价", text: $costBasis)
-                        .textFieldStyle(.roundedBorder)
-                }
-            }
-            .formStyle(.grouped)
-            .navigationTitle("添加持仓")
-
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
-                }
-                
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("添加") {
-                        addPosition()
-                    }
-                    .disabled(!isValid)
-                }
-            }
-        }
-        .frame(minWidth: 400, minHeight: 350)
-    }
-    
-    private var isValid: Bool {
-        !symbol.isEmpty &&
-        !name.isEmpty &&
-        Double(shares) != nil &&
-        Double(costBasis) != nil
-    }
-    
-    private func addPosition() {
-        guard let sharesNum = Double(shares),
-              let costNum = Double(costBasis) else { return }
-        
-        viewModel.addPosition(
-            symbol: symbol,
-            name: name,
-            assetType: assetType,
-            market: market,
-            shares: sharesNum,
-            costBasis: costNum
-        )
-        dismiss()
     }
 }
 

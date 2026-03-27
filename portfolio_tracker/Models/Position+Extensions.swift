@@ -35,8 +35,31 @@ extension Position {
         }
     }
     
+    /// Currency as enum
+    public var currencyEnum: Currency {
+        get {
+            Currency(rawValue: currency ?? Currency.cny.rawValue) ?? .cny
+        }
+        set {
+            currency = newValue.rawValue
+        }
+    }
+    
+    /// Entry mode as enum
+    public var entryMode: EntryMode {
+        get {
+            EntryMode(rawValue: entryModeRaw ?? EntryMode.shares.rawValue) ?? .shares
+        }
+        set {
+            entryModeRaw = newValue.rawValue
+        }
+    }
+    
     /// Current market value (price * shares)
     public var currentValue: Double? {
+        if assetType == .cash {
+            return totalCost
+        }
         guard currentPrice > 0 else { return nil }
         return currentPrice * shares
     }
@@ -90,6 +113,9 @@ extension Position {
         market: Market,
         shares: Double,
         costBasis: Double,
+        currency: Currency? = nil,
+        entryMode: EntryMode = .shares,
+        initialPrice: Double = 0,
         portfolio: Portfolio? = nil
     ) -> Position {
         let position = Position(context: context)
@@ -100,9 +126,10 @@ extension Position {
         position.marketRaw = market.rawValue
         position.shares = shares
         position.costBasis = costBasis
-        position.currentPrice = 0
-        position.currency = market.currency
-        position.lastUpdated = nil
+        position.currentPrice = initialPrice
+        position.currency = currency?.rawValue ?? market.currency
+        position.entryModeRaw = entryMode.rawValue
+        position.lastUpdated = initialPrice > 0 ? Date() : nil
         position.portfolio = portfolio
         return position
     }

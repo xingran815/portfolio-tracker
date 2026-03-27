@@ -132,6 +132,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 
 # Planning docs (keep at parent level only)

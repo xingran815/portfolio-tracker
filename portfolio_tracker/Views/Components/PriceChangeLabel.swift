@@ -11,6 +11,7 @@ import SwiftUI
 struct PriceChangeLabel: View {
     let value: Double
     let percentage: Double
+    var currencyCode: String = "USD"
     
     var isPositive: Bool {
         value >= 0
@@ -28,7 +29,7 @@ struct PriceChangeLabel: View {
         HStack(spacing: 2) {
             Text(arrow)
                 .font(.caption)
-            Text(value.formattedAsCurrency())
+            Text(value.formattedAsCurrency(currencyCode: currencyCode))
                 .monospacedDigit()
             Text("(\(percentage.formattedAsPercentage()))")
                 .monospacedDigit()

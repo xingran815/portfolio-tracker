@@ -2,6 +2,7 @@
 <model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="24512" systemVersion="25D2128" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
     <entity name="Portfolio" representedClassName="Portfolio" syncable="YES">
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="currencyRaw" optional="YES" attributeType="String" defaultValueString="CNY"/>
         <attribute name="expectedReturn" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="maxDrawdown" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
@@ -10,14 +11,15 @@
         <attribute name="riskProfileRaw" optional="YES" attributeType="String"/>
         <attribute name="targetAllocationData" optional="YES" attributeType="Binary"/>
         <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <relationship name="positions" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Portfolio" inverseName="positions" inverseEntity="Portfolio"/>
-        <relationship name="transactions" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Portfolio" inverseName="transactions" inverseEntity="Portfolio"/>
+        <relationship name="positions" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Position" inverseName="portfolio" inverseEntity="Position"/>
+        <relationship name="transactions" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Transaction" inverseName="portfolio" inverseEntity="Transaction"/>
     </entity>
     <entity name="Position" representedClassName="Position" syncable="YES">
         <attribute name="assetTypeRaw" optional="YES" attributeType="String"/>
         <attribute name="costBasis" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
         <attribute name="currency" optional="YES" attributeType="String"/>
         <attribute name="currentPrice" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="entryModeRaw" optional="YES" attributeType="String" defaultValueString="shares"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="lastUpdated" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="marketRaw" optional="YES" attributeType="String"/>

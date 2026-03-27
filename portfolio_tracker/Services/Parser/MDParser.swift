@@ -14,6 +14,9 @@ private enum FieldMapping {
     /// Risk profile field names (English and Chinese)
     static let riskProfile = ["风险偏好", "riskprofile", "risk"]
     
+    /// Currency field names
+    static let currency = ["货币", "currency", "币种"]
+    
     /// Expected return field names
     static let expectedReturn = ["预期收益", "expectedreturn", "return", "目标收益"]
     
@@ -131,6 +134,7 @@ struct MDParser: MDParserProtocol {
         return PortfolioConfig(
             name: name,
             riskProfile: metadata.riskProfile,
+            currency: metadata.currency,
             expectedReturn: metadata.expectedReturn,
             maxDrawdown: metadata.maxDrawdown,
             rebalancingFrequency: metadata.rebalancingFrequency,
@@ -147,6 +151,7 @@ private extension MDParser {
     /// Metadata structure for intermediate parsing
     struct ParsedMetadata {
         var riskProfile: RiskProfile?
+        var currency: Currency?
         var expectedReturn: Double?
         var maxDrawdown: Double?
         var rebalancingFrequency: RebalancingFrequency?
@@ -220,6 +225,30 @@ private extension MDParser {
                 throw MDParserError.invalidRiskProfile(value)
             }
             metadata.riskProfile = profile
+            
+        case let key where FieldMapping.currency.contains(key):
+            let upperValue = value.uppercased()
+            if let curr = Currency(rawValue: upperValue) {
+                metadata.currency = curr
+            } else {
+                // Try common currency name mappings
+                switch upperValue {
+                case "USD", "美元", "$":
+                    metadata.currency = .usd
+                case "CNY", "RMB", "人民币", "¥":
+                    metadata.currency = .cny
+                case "EUR", "欧元", "€":
+                    metadata.currency = .eur
+                case "HKD", "港币", "HK$":
+                    metadata.currency = .hkd
+                case "GBP", "英镑", "£":
+                    metadata.currency = .gbp
+                case "JPY", "日元":
+                    metadata.currency = .jpy
+                default:
+                    break
+                }
+            }
             
         case let key where FieldMapping.expectedReturn.contains(key):
             metadata.expectedReturn = try parsePercentageOrDecimal(value, field: "expectedReturn")

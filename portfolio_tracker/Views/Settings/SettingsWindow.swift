@@ -84,7 +84,7 @@ struct SettingsWindow: View {
             }
             
             Section("缓存") {
-                LabeledContent("价格缓存", value: "5 分钟")
+                LabeledContent("价格缓存", value: "1 天")
                 
                 Button("清除缓存") {
                     // Clear price cache
@@ -109,13 +109,11 @@ struct SettingsWindow: View {
     
     private var apiKeysSettingsView: some View {
         Form {
-            // Alpha Vantage Section
             alphaVantageSection
             
             Divider()
                 .padding(.vertical, 8)
             
-            // Kimi API Section
             kimiSection
         }
         .formStyle(.grouped)
