@@ -8,6 +8,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import CoreData
+import Combine
 
 struct PortfolioListView: View {
     @Environment(\.managedObjectContext) private var viewContext
@@ -28,6 +29,8 @@ struct PortfolioListView: View {
     @State private var showingDeleteConfirmation = false
     @State private var exchangeRates: [String: Double] = [:]
     @State private var exchangeRateError: String?
+    @State private var refreshTrigger = UUID()
+    @State private var cancellables = Set<AnyCancellable>()
     
     init(viewModel: PortfolioListViewModel? = nil) {
         _viewModel = State(initialValue: viewModel ?? PortfolioListViewModel())
@@ -66,7 +69,9 @@ struct PortfolioListView: View {
             Task {
                 await fetchExchangeRates()
             }
+            setupPortfolioChangeListener()
         }
+        .id(refreshTrigger)
         .toolbar {
             ToolbarItemGroup {
                 Button(action: { showingImportPicker = true }) {
@@ -182,6 +187,16 @@ struct PortfolioListView: View {
             exchangeRateError = error.localizedDescription
             print("Failed to fetch exchange rates: \(error)")
         }
+    }
+    
+    private func setupPortfolioChangeListener() {
+        NotificationCenter.default.publisher(for: .portfolioDataDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak viewContext] _ in
+                viewContext?.refreshAllObjects()
+                refreshTrigger = UUID()
+            }
+            .store(in: &cancellables)
     }
 }
 
