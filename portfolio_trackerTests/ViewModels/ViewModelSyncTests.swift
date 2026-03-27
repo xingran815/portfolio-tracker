@@ -495,4 +495,257 @@ final class ViewModelSyncTests: XCTestCase {
         XCTAssertEqual(fetchedPortfolios.first?.positions?.count, 1)
         XCTAssertEqual(fetchedPortfolios.first?.totalValue, 10000)
     }
+    
+    // MARK: - Cash Position Tests (Reproducing User-Reported Issues)
+    
+    /// 测试添加现金后，同一个 portfolio 实例的总市值、持仓数、盈亏百分比是否更新
+    /// 用户报告：添加现金后，这些数据不会变化
+    func testAddCashPosition_updatesPortfolioMetrics() throws {
+        print("🟤 TEST: testAddCashPosition_updatesPortfolioMetrics")
+        print("🟤 Reproducing issue: Adding cash doesn't update totalValue, positions count, profitLossPercentage")
+        
+        // 1. 创建 portfolio
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        try viewContext.save()
+        
+        // 记录初始值（模拟 PortfolioRowView 看到的初始状态）
+        let initialPositionsCount = portfolio.positions?.count ?? -1
+        let initialTotalValue = portfolio.totalValue
+        let initialTotalCost = portfolio.totalCost
+        let initialProfitLossPercentage = portfolio.profitLossPercentage
+        
+        print("🟤 Initial state (before adding cash):")
+        print("🟤   positions.count = \(initialPositionsCount)")
+        print("🟤   totalValue = \(initialTotalValue)")
+        print("🟤   totalCost = \(initialTotalCost)")
+        print("🟤   profitLossPercentage = \(initialProfitLossPercentage)")
+        
+        XCTAssertEqual(initialPositionsCount, 0, "Should start with 0 positions")
+        XCTAssertEqual(initialTotalValue, 0, "Should start with 0 totalValue")
+        
+        // 2. 添加现金 position（模拟用户操作）
+        let cashPosition = Position(context: viewContext)
+        cashPosition.id = UUID()
+        cashPosition.symbol = ""
+        cashPosition.name = "现金"
+        cashPosition.assetTypeRaw = AssetType.cash.rawValue
+        cashPosition.shares = 10000  // 10000 元
+        cashPosition.costBasis = 1.0
+        cashPosition.currentPrice = 1.0
+        cashPosition.portfolio = portfolio
+        
+        portfolio.updatedAt = Date()  // 更新 portfolio 属性
+        
+        try viewContext.save()
+        
+        // 3. 检查同一个 portfolio 实例是否更新（模拟 @ObservedObject 监听的 portfolio）
+        let afterPositionsCount = portfolio.positions?.count ?? -1
+        let afterTotalValue = portfolio.totalValue
+        let afterTotalCost = portfolio.totalCost
+        let afterProfitLossPercentage = portfolio.profitLossPercentage
+        
+        print("🟤 After adding cash (same portfolio instance):")
+        print("🟤   positions.count = \(afterPositionsCount)")
+        print("🟤   totalValue = \(afterTotalValue)")
+        print("🟤   totalCost = \(afterTotalCost)")
+        print("🟤   profitLossPercentage = \(afterProfitLossPercentage)")
+        
+        // 4. 验证
+        // 关键：这些断言如果失败，就重现了用户报告的问题
+        XCTAssertEqual(afterPositionsCount, 1, "⚠️ ISSUE: positions.count should be 1 after adding cash")
+        XCTAssertEqual(afterTotalValue, 10000, "⚠️ ISSUE: totalValue should be 10000 after adding cash")
+        XCTAssertEqual(afterTotalCost, 10000, "totalCost should be 10000")
+        // cash 没有盈亏，所以 profitLossPercentage 应该是 0
+        XCTAssertEqual(afterProfitLossPercentage, 0, accuracy: 0.001, "profitLossPercentage should be 0 for cash")
+    }
+    
+    /// 测试删除现金后，portfolio 的总市值和总成本是否更新
+    /// 用户报告：删除现金时，只有总成本会变化
+    func testDeleteCashPosition_updatesPortfolioMetrics() throws {
+        print("🟤 TEST: testDeleteCashPosition_updatesPortfolioMetrics")
+        print("🟤 Reproducing issue: Deleting cash only updates totalCost, not totalValue")
+        
+        // 1. 创建 portfolio + 现金 position
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        let cashPosition = Position(context: viewContext)
+        cashPosition.id = UUID()
+        cashPosition.symbol = ""
+        cashPosition.name = "现金"
+        cashPosition.assetTypeRaw = AssetType.cash.rawValue
+        cashPosition.shares = 10000
+        cashPosition.costBasis = 1.0
+        cashPosition.currentPrice = 1.0
+        cashPosition.portfolio = portfolio
+        
+        // 添加一个股票 position 用于测试盈亏
+        let stockPosition = Position(context: viewContext)
+        stockPosition.id = UUID()
+        stockPosition.symbol = "AAPL"
+        stockPosition.name = "Apple"
+        stockPosition.assetTypeRaw = AssetType.stock.rawValue
+        stockPosition.shares = 100
+        stockPosition.costBasis = 150  // 成本 15000
+        stockPosition.currentPrice = 200  // 市值 20000
+        stockPosition.portfolio = portfolio
+        
+        try viewContext.save()
+        
+        // 记录删除前的值
+        let beforePositionsCount = portfolio.positions?.count ?? -1
+        let beforeTotalValue = portfolio.totalValue
+        let beforeTotalCost = portfolio.totalCost
+        let beforeProfitLoss = portfolio.totalProfitLoss
+        
+        print("🟤 Before deleting cash:")
+        print("🟤   positions.count = \(beforePositionsCount)")
+        print("🟤   totalValue = \(beforeTotalValue)")  // 应该是 30000 (10000 cash + 20000 stock)
+        print("🟤   totalCost = \(beforeTotalCost)")    // 应该是 25000 (10000 cash + 15000 stock)
+        print("🟤   profitLoss = \(beforeProfitLoss)")  // 应该是 5000
+        
+        XCTAssertEqual(beforePositionsCount, 2)
+        XCTAssertEqual(beforeTotalValue, 30000, accuracy: 0.001)
+        XCTAssertEqual(beforeTotalCost, 25000, accuracy: 0.001)
+        
+        // 2. 删除现金 position
+        viewContext.delete(cashPosition)
+        portfolio.updatedAt = Date()
+        
+        try viewContext.save()
+        
+        // 3. 检查同一个 portfolio 实例是否更新
+        let afterPositionsCount = portfolio.positions?.count ?? -1
+        let afterTotalValue = portfolio.totalValue
+        let afterTotalCost = portfolio.totalCost
+        let afterProfitLoss = portfolio.totalProfitLoss
+        
+        print("🟤 After deleting cash (same portfolio instance):")
+        print("🟤   positions.count = \(afterPositionsCount)")
+        print("🟤   totalValue = \(afterTotalValue)")  // 应该是 20000 (只有 stock)
+        print("🟤   totalCost = \(afterTotalCost)")    // 应该是 15000
+        print("🟤   profitLoss = \(afterProfitLoss)")  // 应该是 5000
+        
+        // 4. 验证
+        XCTAssertEqual(afterPositionsCount, 1, "⚠️ ISSUE: positions.count should be 1 after delete")
+        XCTAssertEqual(afterTotalValue, 20000, accuracy: 0.001, "⚠️ ISSUE: totalValue should be 20000 after delete")
+        XCTAssertEqual(afterTotalCost, 15000, accuracy: 0.001, "⚠️ ISSUE: totalCost should be 15000 after delete")
+        XCTAssertEqual(afterProfitLoss, 5000, accuracy: 0.001, "profitLoss should still be 5000")
+    }
+    
+    /// 测试编辑现金数额后，portfolio 的净利润是否更新
+    /// 用户报告：编辑现金数额时，只有净利润会变化
+    func testEditCashAmount_updatesPortfolioMetrics() throws {
+        print("🟤 TEST: testEditCashAmount_updatesPortfolioMetrics")
+        print("🟤 Reproducing issue: Editing cash amount only updates profitLoss")
+        
+        // 1. 创建 portfolio + 现金 position
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        let cashPosition = Position(context: viewContext)
+        cashPosition.id = UUID()
+        cashPosition.symbol = ""
+        cashPosition.name = "现金"
+        cashPosition.assetTypeRaw = AssetType.cash.rawValue
+        cashPosition.shares = 10000
+        cashPosition.costBasis = 1.0
+        cashPosition.currentPrice = 1.0
+        cashPosition.portfolio = portfolio
+        
+        try viewContext.save()
+        
+        // 记录编辑前的值
+        let beforeTotalValue = portfolio.totalValue
+        let beforeTotalCost = portfolio.totalCost
+        let beforeProfitLoss = portfolio.totalProfitLoss
+        
+        print("🟤 Before editing cash amount:")
+        print("🟤   totalValue = \(beforeTotalValue)")
+        print("🟤   totalCost = \(beforeTotalCost)")
+        print("🟤   profitLoss = \(beforeProfitLoss)")
+        
+        XCTAssertEqual(beforeTotalValue, 10000, accuracy: 0.001)
+        XCTAssertEqual(beforeTotalCost, 10000, accuracy: 0.001)
+        XCTAssertEqual(beforeProfitLoss, 0, accuracy: 0.001)
+        
+        // 2. 编辑现金数额（模拟用户将 10000 改为 20000）
+        cashPosition.shares = 20000
+        portfolio.updatedAt = Date()
+        
+        try viewContext.save()
+        
+        // 3. 检查同一个 portfolio 实例是否更新
+        let afterTotalValue = portfolio.totalValue
+        let afterTotalCost = portfolio.totalCost
+        let afterProfitLoss = portfolio.totalProfitLoss
+        
+        print("🟤 After editing cash amount to 20000:")
+        print("🟤   totalValue = \(afterTotalValue)")
+        print("🟤   totalCost = \(afterTotalCost)")
+        print("🟤   profitLoss = \(afterProfitLoss)")
+        
+        // 4. 验证
+        XCTAssertEqual(afterTotalValue, 20000, accuracy: 0.001, "⚠️ ISSUE: totalValue should be 20000 after edit")
+        XCTAssertEqual(afterTotalCost, 20000, accuracy: 0.001, "⚠️ ISSUE: totalCost should be 20000 after edit")
+        XCTAssertEqual(afterProfitLoss, 0, accuracy: 0.001, "profitLoss should still be 0 for cash")
+    }
+    
+    /// 测试 refreshAllObjects() 后是否能看到更新
+    /// 这是当前修复方案的核心
+    func testRefreshAllObjects_afterCashPositionChange() throws {
+        print("🟤 TEST: testRefreshAllObjects_afterCashPositionChange")
+        print("🟤 Testing if refreshAllObjects() fixes the issue")
+        
+        // 1. 创建 portfolio
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        try viewContext.save()
+        
+        // 保存 portfolio 的 ID 用于后续 fetch
+        let portfolioId = portfolio.id!
+        
+        // 2. 添加现金 position
+        let cashPosition = Position(context: viewContext)
+        cashPosition.id = UUID()
+        cashPosition.symbol = ""
+        cashPosition.name = "现金"
+        cashPosition.assetTypeRaw = AssetType.cash.rawValue
+        cashPosition.shares = 10000
+        cashPosition.costBasis = 1.0
+        cashPosition.currentPrice = 1.0
+        cashPosition.portfolio = portfolio
+        
+        portfolio.updatedAt = Date()
+        
+        try viewContext.save()
+        
+        print("🟤 Before refreshAllObjects():")
+        print("🟤   portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        print("🟤   portfolio.totalValue = \(portfolio.totalValue)")
+        
+        // 3. 调用 refreshAllObjects()（模拟修复方案）
+        viewContext.refreshAllObjects()
+        
+        // 4. 重新 fetch portfolio（模拟 @FetchRequest 重新获取）
+        let request = Portfolio.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
+        let fetchedPortfolios = try viewContext.fetch(request)
+        let refreshedPortfolio = fetchedPortfolios.first!
+        
+        print("🟤 After refreshAllObjects() and re-fetch:")
+        print("🟤   refreshedPortfolio.positions.count = \(refreshedPortfolio.positions?.count ?? -1)")
+        print("🟤   refreshedPortfolio.totalValue = \(refreshedPortfolio.totalValue)")
+        
+        // 5. 验证
+        XCTAssertEqual(refreshedPortfolio.positions?.count, 1, "Should have 1 position after refresh")
+        XCTAssertEqual(refreshedPortfolio.totalValue, 10000, "totalValue should be 10000 after refresh")
+    }
 }
