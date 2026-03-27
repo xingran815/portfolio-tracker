@@ -1,0 +1,174 @@
+//
+//  NSManagedObjectObservableTests.swift
+//  portfolio_trackerTests
+//
+//  Tests for NSManagedObject ObservableObject conformance
+//
+
+import XCTest
+import CoreData
+import Combine
+@testable import portfolio_tracker
+
+@MainActor
+final class NSManagedObjectObservableTests: XCTestCase {
+    
+    var container: NSPersistentContainer!
+    var viewContext: NSManagedObjectContext!
+    var cancellables: Set<AnyCancellable>!
+    
+    override func setUp() async throws {
+        try await super.setUp()
+        
+        container = NSPersistentContainer(name: "portfolio_tracker")
+        let description = container.persistentStoreDescriptions.first!
+        description.type = NSInMemoryStoreType
+        container.loadPersistentStores { _, error in
+            if let error = error {
+                fatalError("Failed to load store: \(error)")
+            }
+        }
+        viewContext = container.viewContext
+        cancellables = []
+    }
+    
+    override func tearDown() async throws {
+        container = nil
+        viewContext = nil
+        cancellables = nil
+        try await super.tearDown()
+    }
+    
+    // MARK: - ObservableObject Conformance Tests
+    
+    func testPortfolio_isObservableObject() {
+        print("🟡 TEST: testPortfolio_isObservableObject")
+        
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        XCTAssertTrue(portfolio is any ObservableObject, "Portfolio should conform to ObservableObject")
+        print("🟡 Portfolio conforms to ObservableObject: true")
+    }
+    
+    func testPosition_isObservableObject() {
+        print("🟡 TEST: testPosition_isObservableObject")
+        
+        let position = Position(context: viewContext)
+        position.id = UUID()
+        position.symbol = "AAPL"
+        
+        XCTAssertTrue(position is any ObservableObject, "Position should conform to ObservableObject")
+        print("🟡 Position conforms to ObservableObject: true")
+    }
+    
+    // MARK: - Property Change Notification Tests
+    
+    func testPortfolio_nameChange_triggersObjectWillChange() async throws {
+        print("🟡 TEST: testPortfolio_nameChange_triggersObjectWillChange")
+        
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        try viewContext.save()
+        
+        let expectation = XCTestExpectation(description: "objectWillChange received")
+        
+        portfolio.objectWillChange
+            .sink {
+                print("🟡 Portfolio objectWillChange triggered")
+                expectation.fulfill()
+            }
+            .store(in: &cancellables)
+        
+        portfolio.name = "Updated Portfolio"
+        try viewContext.save()
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+    }
+    
+    func testPosition_sharesChange_triggersObjectWillChange() async throws {
+        print("🟡 TEST: testPosition_sharesChange_triggersObjectWillChange")
+        
+        let position = Position(context: viewContext)
+        position.id = UUID()
+        position.symbol = "AAPL"
+        position.shares = 100
+        
+        try viewContext.save()
+        
+        let expectation = XCTestExpectation(description: "objectWillChange received")
+        
+        position.objectWillChange
+            .sink {
+                print("🟡 Position objectWillChange triggered")
+                expectation.fulfill()
+            }
+            .store(in: &cancellables)
+        
+        position.shares = 200
+        try viewContext.save()
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+    }
+    
+    // MARK: - Relationship Change Notification Tests
+    
+    func testPortfolio_addPosition_triggersObjectWillChange() async throws {
+        print("🟡 TEST: testPortfolio_addPosition_triggersObjectWillChange")
+        
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        try viewContext.save()
+        
+        let expectation = XCTestExpectation(description: "objectWillChange received on position change")
+        
+        portfolio.objectWillChange
+            .sink {
+                print("🟡 Portfolio objectWillChange triggered (position added)")
+                expectation.fulfill()
+            }
+            .store(in: &cancellables)
+        
+        let position = Position(context: viewContext)
+        position.id = UUID()
+        position.symbol = "AAPL"
+        position.portfolio = portfolio
+        
+        try viewContext.save()
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+    }
+    
+    func testPosition_setPortfolio_triggersObjectWillChange() async throws {
+        print("🟡 TEST: testPosition_setPortfolio_triggersObjectWillChange")
+        
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        let position = Position(context: viewContext)
+        position.id = UUID()
+        position.symbol = "AAPL"
+        
+        try viewContext.save()
+        
+        let expectation = XCTestExpectation(description: "objectWillChange received")
+        
+        position.objectWillChange
+            .sink {
+                print("🟡 Position objectWillChange triggered (portfolio set)")
+                expectation.fulfill()
+            }
+            .store(in: &cancellables)
+        
+        position.portfolio = portfolio
+        try viewContext.save()
+        
+        await fulfillment(of: [expectation], timeout: 1.0)
+    }
+}
