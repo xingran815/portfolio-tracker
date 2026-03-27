@@ -385,4 +385,114 @@ final class ViewModelSyncTests: XCTestCase {
         XCTAssertEqual(portfolio.positions?.count, 1, "Should have 1 position after delete")
         XCTAssertEqual(portfolio.totalValue, 3000, "totalValue should be 3000")
     }
+    
+    // MARK: - Simulating @FetchRequest behavior
+    
+    func testFetchRequest_simulation_portfolioFetchAfterPositionChange() throws {
+        print("🟠 TEST: testFetchRequest_simulation_portfolioFetchAfterPositionChange")
+        print("🟠 This test simulates what @FetchRequest does when Position changes")
+        
+        // 1. 创建 portfolio
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        try viewContext.save()
+        
+        // 2. 模拟 @FetchRequest 的初始查询
+        var request = Portfolio.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Portfolio.name, ascending: true)]
+        var fetchedPortfolios = try viewContext.fetch(request)
+        
+        print("🟠 Initial fetch (simulating @FetchRequest):")
+        print("🟠   fetchedPortfolios.count = \(fetchedPortfolios.count)")
+        print("🟠   first portfolio.positions.count = \(fetchedPortfolios.first?.positions?.count ?? -1)")
+        print("🟠   first portfolio.totalValue = \(fetchedPortfolios.first?.totalValue ?? -1)")
+        
+        XCTAssertEqual(fetchedPortfolios.count, 1)
+        XCTAssertEqual(fetchedPortfolios.first?.positions?.count, 0)
+        
+        // 3. 添加 position
+        let position = Position(context: viewContext)
+        position.id = UUID()
+        position.symbol = "CASH"
+        position.assetTypeRaw = AssetType.cash.rawValue
+        position.shares = 10000
+        position.costBasis = 1.0
+        position.currentPrice = 1.0
+        position.portfolio = portfolio
+        
+        try viewContext.save()
+        
+        // 4. 再次模拟 @FetchRequest 查询（Position 变化后）
+        // @FetchRequest 会重新查询吗？
+        request = Portfolio.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Portfolio.name, ascending: true)]
+        fetchedPortfolios = try viewContext.fetch(request)
+        
+        print("🟠 After position added - re-fetch portfolios:")
+        print("🟠   fetchedPortfolios.count = \(fetchedPortfolios.count)")
+        print("🟠   first portfolio.positions.count = \(fetchedPortfolios.first?.positions?.count ?? -1)")
+        print("🟠   first portfolio.totalValue = \(fetchedPortfolios.first?.totalValue ?? -1)")
+        
+        // 5. 验证
+        XCTAssertEqual(fetchedPortfolios.count, 1)
+        XCTAssertEqual(fetchedPortfolios.first?.positions?.count, 1, "Re-fetched portfolio should have 1 position")
+        XCTAssertEqual(fetchedPortfolios.first?.totalValue, 10000, "Re-fetched portfolio should have totalValue = 10000")
+        
+        // 关键问题：@FetchRequest 是否会自动重新查询？
+        // 如果不会，就需要手动触发更新
+    }
+    
+    func testFetchRequest_simulation_withPortfolioUpdate() throws {
+        print("🟠 TEST: testFetchRequest_simulation_withPortfolioUpdate")
+        print("🟠 This test verifies if updating portfolio.updatedAt triggers @FetchRequest refresh")
+        
+        // 1. 创建 portfolio
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        portfolio.updatedAt = Date()
+        
+        try viewContext.save()
+        
+        // 2. 初始查询
+        var request = Portfolio.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Portfolio.name, ascending: true)]
+        var fetchedPortfolios = try viewContext.fetch(request)
+        let originalUpdatedAt = fetchedPortfolios.first?.updatedAt
+        
+        print("🟠 Initial fetch:")
+        print("🟠   updatedAt = \(originalUpdatedAt ?? Date.distantPast)")
+        
+        // 3. 添加 position + 更新 portfolio.updatedAt
+        let position = Position(context: viewContext)
+        position.id = UUID()
+        position.symbol = "CASH"
+        position.assetTypeRaw = AssetType.cash.rawValue
+        position.shares = 10000
+        position.costBasis = 1.0
+        position.currentPrice = 1.0
+        position.portfolio = portfolio
+        
+        portfolio.updatedAt = Date()  // 关键：更新 portfolio 属性
+        
+        try viewContext.save()
+        
+        // 4. 再次查询
+        request = Portfolio.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Portfolio.name, ascending: true)]
+        fetchedPortfolios = try viewContext.fetch(request)
+        let newUpdatedAt = fetchedPortfolios.first?.updatedAt
+        
+        print("🟠 After add + update updatedAt:")
+        print("🟠   updatedAt = \(newUpdatedAt ?? Date.distantPast)")
+        print("🟠   positions.count = \(fetchedPortfolios.first?.positions?.count ?? -1)")
+        print("🟠   totalValue = \(fetchedPortfolios.first?.totalValue ?? -1)")
+        
+        // 5. 验证
+        XCTAssertNotEqual(originalUpdatedAt, newUpdatedAt, "updatedAt should have changed")
+        XCTAssertEqual(fetchedPortfolios.first?.positions?.count, 1)
+        XCTAssertEqual(fetchedPortfolios.first?.totalValue, 10000)
+    }
 }
