@@ -117,9 +117,13 @@ final class DriftAnalyzerTests: XCTestCase {
         let msftDrift = analysis.positions.first { $0.symbol == "MSFT" }
         let googlDrift = analysis.positions.first { $0.symbol == "GOOGL" }
         
-        XCTAssertEqual(aaplDrift?.drift, 0.10, accuracy: 0.001)
-        XCTAssertEqual(msftDrift?.drift, -0.10, accuracy: 0.001)
-        XCTAssertEqual(googlDrift?.drift, 0.0, accuracy: 0.001)
+        XCTAssertNotNil(aaplDrift)
+        XCTAssertNotNil(msftDrift)
+        XCTAssertNotNil(googlDrift)
+        
+        XCTAssertEqual(aaplDrift!.drift, 0.10, accuracy: 0.001)
+        XCTAssertEqual(msftDrift!.drift, -0.10, accuracy: 0.001)
+        XCTAssertEqual(googlDrift!.drift, 0.0, accuracy: 0.001)
     }
     
     // MARK: - Missing Positions
@@ -137,9 +141,9 @@ final class DriftAnalyzerTests: XCTestCase {
         
         let msftDrift = analysis.positions.first { $0.symbol == "MSFT" }
         XCTAssertNotNil(msftDrift)
-        XCTAssertEqual(msftDrift?.currentValue, 0)
-        XCTAssertEqual(msftDrift?.targetWeight, 0.50)
-        XCTAssertEqual(msftDrift?.drift, -0.50, accuracy: 0.001)
+        XCTAssertEqual(msftDrift!.currentValue, 0)
+        XCTAssertEqual(msftDrift!.targetWeight, 0.50)
+        XCTAssertEqual(msftDrift!.drift, -0.50, accuracy: 0.001)
     }
     
     // MARK: - Allocation Normalization
@@ -162,8 +166,9 @@ final class DriftAnalyzerTests: XCTestCase {
     // MARK: - Error Handling
     
     func testEmptyPositionsThrowsError() {
+        let emptyPositions: [PositionData] = []
         XCTAssertThrowsError(try analyzer.analyze(
-            positions: [],
+            positions: emptyPositions,
             targetAllocation: ["AAPL": 0.5],
             totalValue: 10000
         )) { error in
@@ -413,22 +418,7 @@ struct PositionData: PositionProtocol {
 
 // MARK: - Error Equality Extensions
 
-extension DriftAnalysisError: Equatable {
-    public static func == (lhs: DriftAnalysisError, rhs: DriftAnalysisError) -> Bool {
-        switch (lhs, rhs) {
-        case (.noPositions, .noPositions),
-             (.invalidTargetAllocation, .invalidTargetAllocation),
-             (.totalValueZero, .totalValueZero),
-             (.totalValueNegative, .totalValueNegative),
-             (.allocationSumZero, .allocationSumZero):
-            return true
-        default:
-            return false
-        }
-    }
-}
-
-extension RebalancingError: Equatable {
+extension RebalancingError: @retroactive Equatable {
     public static func == (lhs: RebalancingError, rhs: RebalancingError) -> Bool {
         switch (lhs, rhs) {
         case (.noSignificantDrift, .noSignificantDrift):

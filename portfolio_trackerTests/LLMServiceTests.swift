@@ -5,26 +5,27 @@
 //  Tests for LLM service
 //
 
-import Testing
+import XCTest
 import Foundation
 @testable import portfolio_tracker
 
-@Suite("LLM Service Tests")
-struct LLMServiceTests {
+final class LLMServiceTests: XCTestCase {
     
-    @Test("ChatMessage initialization")
-    func testChatMessage() {
+    // MARK: - ChatMessage Tests
+    
+    func testChatMessageInitialization() {
         let message = ChatMessage(
             role: .user,
             content: "Should I rebalance my portfolio?"
         )
         
-        #expect(message.role == .user)
-        #expect(message.content == "Should I rebalance my portfolio?")
+        XCTAssertEqual(message.role, .user)
+        XCTAssertEqual(message.content, "Should I rebalance my portfolio?")
     }
     
-    @Test("ConversationContext building")
-    func testConversationContext() {
+    // MARK: - ConversationContext Tests
+    
+    func testConversationContextBuilding() {
         let positions = [
             ConversationContext.PositionSummary(
                 symbol: "AAPL",
@@ -40,31 +41,62 @@ struct LLMServiceTests {
             targetAllocation: ["AAPL": 0.5, "VOO": 0.5]
         )
         
-        #expect(context.portfolioName == "Test Portfolio")
-        #expect(context.positions.count == 1)
-        #expect(context.riskProfile == "moderate")
-        #expect(context.targetAllocation?["AAPL"] == 0.5)
+        XCTAssertEqual(context.portfolioName, "Test Portfolio")
+        XCTAssertEqual(context.positions.count, 1)
+        XCTAssertEqual(context.riskProfile, "moderate")
+        XCTAssertEqual(context.targetAllocation?["AAPL"], 0.5)
     }
     
-    @Test("System prompt generation")
-    func testSystemPrompt() {
+    // MARK: - SystemPrompts Tests
+    
+    func testBasePromptContainsRequiredContent() {
+        let prompt = SystemPrompts.basePrompt
+        
+        XCTAssertTrue(prompt.contains("investment advisor"))
+        XCTAssertTrue(prompt.contains("portfolio management"))
+        XCTAssertTrue(prompt.contains("rebalancing"))
+    }
+    
+    func testContextStringBuilding() {
+        let positions = [
+            ConversationContext.PositionSummary(
+                symbol: "AAPL",
+                shares: 100,
+                currentValue: 15000.0
+            )
+        ]
+        
         let context = ConversationContext(
             portfolioName: "My Portfolio",
-            positions: [],
+            positions: positions,
             riskProfile: "conservative",
+            targetAllocation: ["AAPL": 0.6]
+        )
+        
+        let contextString = SystemPrompts.buildContextString(context: context)
+        
+        XCTAssertTrue(contextString.contains("My Portfolio"))
+        XCTAssertTrue(contextString.contains("conservative"))
+        XCTAssertTrue(contextString.contains("AAPL"))
+        XCTAssertTrue(contextString.contains("educational advice"))
+    }
+    
+    func testContextStringWithNilValues() {
+        let context = ConversationContext(
+            portfolioName: nil,
+            positions: [],
+            riskProfile: nil,
             targetAllocation: nil
         )
         
-        let prompt = SystemPrompts.portfolioAdvisor(context: context)
+        let contextString = SystemPrompts.buildContextString(context: context)
         
-        #expect(prompt.contains("investment advisor"))
-        #expect(prompt.contains("My Portfolio"))
-        #expect(prompt.contains("conservative"))
-        #expect(prompt.contains("educational advice"))
+        XCTAssertTrue(contextString.contains("educational advice"))
     }
     
-    @Test("LLM error descriptions")
-    func testLLMErrors() {
+    // MARK: - LLM Error Tests
+    
+    func testLLMErrorDescriptions() {
         let errors: [LLMServiceError] = [
             .apiKeyMissing,
             .rateLimited,
@@ -77,37 +109,39 @@ struct LLMServiceTests {
         
         for error in errors {
             let description = error.errorDescription
-            #expect(description != nil, "Error \(error) should have a description")
-            #expect(description?.isEmpty == false, "Error \(error) description should not be empty")
+            XCTAssertNotNil(description, "Error \(error) should have a description")
+            XCTAssertFalse(description?.isEmpty ?? true, "Error \(error) description should not be empty")
         }
     }
     
-    @Test("LLM configuration defaults")
-    func testLLMConfiguration() {
+    // MARK: - LLM Configuration Tests
+    
+    func testLLMConfigurationDefaults() {
         let config = LLMConfiguration.default
         
-        #expect(config.model == "moonshot-v1-8k")
-        #expect(config.temperature == 0.7)
-        #expect(config.maxTokens == 2048)
-        #expect(config.topP == 0.9)
-        #expect(config.requestTimeout == 30.0)
-        #expect(config.maxRetries == 3)
-        #expect(config.maxContextLength == 8000)
+        XCTAssertEqual(config.model, "moonshot-v1-8k")
+        XCTAssertEqual(config.temperature, 0.7, accuracy: 0.01)
+        XCTAssertEqual(config.maxTokens, 2048)
+        XCTAssertEqual(config.topP, 0.9, accuracy: 0.01)
+        XCTAssertEqual(config.requestTimeout, 30.0, accuracy: 0.01)
+        XCTAssertEqual(config.maxRetries, 3)
+        XCTAssertEqual(config.maxContextLength, 8000)
     }
     
-    @Test("APIKeyValidationResult cases")
-    func testAPIKeyValidationResult() {
-        #expect(APIKeyValidationResult.valid.isValid == true)
-        #expect(APIKeyValidationResult.notConfigured.isValid == false)
-        #expect(APIKeyValidationResult.invalid.isValid == false)
-        #expect(APIKeyValidationResult.networkError("timeout").isValid == false)
-        #expect(APIKeyValidationResult.rateLimited.isValid == false)
-        #expect(APIKeyValidationResult.serviceUnavailable.isValid == false)
+    // MARK: - API Key Validation Tests
+    
+    func testAPIKeyValidationResultCases() {
+        XCTAssertTrue(APIKeyValidationResult.valid.isValid)
+        XCTAssertFalse(APIKeyValidationResult.notConfigured.isValid)
+        XCTAssertFalse(APIKeyValidationResult.invalid.isValid)
+        XCTAssertFalse(APIKeyValidationResult.networkError("timeout").isValid)
+        XCTAssertFalse(APIKeyValidationResult.rateLimited.isValid)
+        XCTAssertFalse(APIKeyValidationResult.serviceUnavailable.isValid)
     }
     
-    @Test("LLMServiceError Sendable conformance")
-    func testErrorSendable() async {
-        // Verify errors can be passed across actor boundaries
+    // MARK: - Sendable Conformance Test
+    
+    func testErrorSendableConformance() async {
         let errors: [LLMServiceError] = [
             .apiKeyMissing,
             .networkError("test"),
@@ -115,7 +149,6 @@ struct LLMServiceTests {
             .decodingError("parse error")
         ]
         
-        // If this compiles, Sendable conformance is working
-        #expect(errors.count == 4)
+        XCTAssertEqual(errors.count, 4)
     }
 }

@@ -5,33 +5,14 @@
 //  Tests for DataProvider implementations
 //
 
-import Testing
+import XCTest
 import Foundation
 @testable import portfolio_tracker
 
-/// Mock URLSession for testing network requests
-final class MockURLSession: URLSession {
-    var mockData: Data?
-    var mockResponse: URLResponse?
-    var mockError: Error?
+final class DataProviderTests: XCTestCase {
     
-    override func data(from url: URL) async throws -> (Data, URLResponse) {
-        if let error = mockError {
-            throw error
-        }
-        
-        guard let data = mockData, let response = mockResponse else {
-            throw URLError(.badServerResponse)
-        }
-        
-        return (data, response)
-    }
-}
-
-@Suite("AlphaVantageProvider Tests")
-struct AlphaVantageProviderTests {
+    // MARK: - Quote Tests
     
-    @Test("Quote struct formatted properties")
     func testQuoteFormattedProperties() {
         let quote = Quote(
             symbol: "AAPL",
@@ -43,35 +24,64 @@ struct AlphaVantageProviderTests {
             currency: "USD"
         )
         
-        #expect(quote.formattedPrice == "153.50")
-        #expect(quote.formattedChange.contains("+1.50"))
+        XCTAssertEqual(quote.formattedPrice, "153.50")
+        XCTAssertTrue(quote.formattedChange.contains("+1.50"))
     }
-}
-
-@Suite("RateLimiter Tests")
-struct RateLimiterTests {
     
-    @Test("Rate limiter enforces max requests")
-    func testRateLimiter() async {
-        // Given
+    func testQuoteFormattedChangeNegative() {
+        let quote = Quote(
+            symbol: "AAPL",
+            price: 153.50,
+            change: -1.50,
+            changePercent: -0.9868,
+            volume: 50_000_000,
+            lastUpdated: Date(),
+            currency: "USD"
+        )
+        
+        XCTAssertTrue(quote.formattedChange.contains("-1.50"))
+    }
+    
+    // MARK: - RateLimiter Tests
+    
+    func testRateLimiterEnforcesMaxRequests() async {
         let limiter = RateLimiter(maxRequests: 2, perSeconds: 1)
         
-        // When - Record 2 requests
         await limiter.recordRequest()
         await limiter.recordRequest()
         
-        // Then - Should have 0 remaining
         let remaining = await limiter.remainingRequests
-        #expect(remaining == 0)
+        XCTAssertEqual(remaining, 0)
     }
-}
-
-@Suite("QuoteCache Tests")
-struct QuoteCacheTests {
     
-    @Test("Cache stores and retrieves quotes")
-    func testCacheStoreAndRetrieve() async {
-        // Given
+    func testRateLimiterAllowsRequestsWithinLimit() async {
+        let limiter = RateLimiter(maxRequests: 5, perSeconds: 1)
+        
+        await limiter.recordRequest()
+        await limiter.recordRequest()
+        
+        let remaining = await limiter.remainingRequests
+        XCTAssertEqual(remaining, 3)
+    }
+    
+    func testRateLimiterResetsAfterTimeInterval() async {
+        let limiter = RateLimiter(maxRequests: 2, perSeconds: 1)
+        
+        await limiter.recordRequest()
+        await limiter.recordRequest()
+        
+        let remaining1 = await limiter.remainingRequests
+        XCTAssertEqual(remaining1, 0)
+        
+        try? await Task.sleep(nanoseconds: 1_100_000_000)
+        
+        let remaining2 = await limiter.remainingRequests
+        XCTAssertEqual(remaining2, 2)
+    }
+    
+    // MARK: - QuoteCache Tests
+    
+    func testCacheStoresAndRetrievesQuotes() async {
         let cache = QuoteCache()
         let quote = Quote(
             symbol: "AAPL",
@@ -83,12 +93,68 @@ struct QuoteCacheTests {
             currency: "USD"
         )
         
-        // When
         await cache.set(symbol: "AAPL", quote: quote)
         let retrieved = await cache.get(symbol: "AAPL")
         
-        // Then
-        #expect(retrieved != nil)
-        #expect(retrieved?.price == 150.0)
+        XCTAssertNotNil(retrieved)
+        XCTAssertEqual(retrieved?.price, 150.0)
+        XCTAssertEqual(retrieved?.symbol, "AAPL")
+    }
+    
+    func testCacheReturnsNilForMissingSymbol() async {
+        let cache = QuoteCache()
+        
+        let retrieved = await cache.get(symbol: "NONEXISTENT")
+        
+        XCTAssertNil(retrieved)
+    }
+    
+    func testCacheUpdatesExistingQuote() async {
+        let cache = QuoteCache()
+        let quote1 = Quote(
+            symbol: "AAPL",
+            price: 150.0,
+            change: 1.0,
+            changePercent: 0.5,
+            volume: 1000,
+            lastUpdated: Date(),
+            currency: "USD"
+        )
+        
+        await cache.set(symbol: "AAPL", quote: quote1)
+        
+        let quote2 = Quote(
+            symbol: "AAPL",
+            price: 160.0,
+            change: 2.0,
+            changePercent: 1.0,
+            volume: 2000,
+            lastUpdated: Date(),
+            currency: "USD"
+        )
+        
+        await cache.set(symbol: "AAPL", quote: quote2)
+        let retrieved = await cache.get(symbol: "AAPL")
+        
+        XCTAssertEqual(retrieved?.price, 160.0)
+    }
+    
+    func testCacheClearsExpiredQuotes() async {
+        let cache = QuoteCache()
+        let quote = Quote(
+            symbol: "AAPL",
+            price: 150.0,
+            change: 1.0,
+            changePercent: 0.5,
+            volume: 1000,
+            lastUpdated: Date().addingTimeInterval(-3600),
+            currency: "USD"
+        )
+        
+        await cache.set(symbol: "AAPL", quote: quote)
+        
+        let retrieved = await cache.get(symbol: "AAPL")
+        
+        XCTAssertNil(retrieved, "Cache should not return expired quotes")
     }
 }
