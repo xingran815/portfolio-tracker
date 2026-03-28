@@ -17,6 +17,16 @@ public final class PersistenceController {
     /// Logger for debugging
     private static let logger = Logger(subsystem: "com.portfolio_tracker", category: "Persistence")
     
+    /// Shared managed object model to avoid "Failed to find a unique match" errors
+    /// when multiple PersistenceController instances are created
+    public static let sharedModel: NSManagedObjectModel = {
+        guard let modelURL = Bundle(for: Portfolio.self).url(forResource: "portfolio_tracker", withExtension: "momd"),
+              let model = NSManagedObjectModel(contentsOf: modelURL) else {
+            fatalError("Failed to load Core Data model")
+        }
+        return model
+    }()
+    
     /// CoreData persistent container
     public let container: NSPersistentContainer
     
@@ -28,7 +38,7 @@ public final class PersistenceController {
     /// Initializes the persistence controller
     /// - Parameter inMemory: If true, uses in-memory store for testing
     public init(inMemory: Bool = false) {
-        container = NSPersistentContainer(name: "portfolio_tracker")
+        container = NSPersistentContainer(name: "portfolio_tracker", managedObjectModel: Self.sharedModel)
         
         if inMemory {
             container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")

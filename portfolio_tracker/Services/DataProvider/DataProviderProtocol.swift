@@ -199,13 +199,11 @@ actor RateLimiter {
     }
     
     func waitIfNeeded() async {
-        let now = Date()
-        // Remove old requests outside the time window
-        requests.removeAll { now.timeIntervalSince($0) > timeWindow }
+        cleanOldRequests()
         
         // If at limit, wait until oldest request expires
         if requests.count >= maxRequests, let oldest = requests.first {
-            let waitTime = timeWindow - now.timeIntervalSince(oldest)
+            let waitTime = timeWindow - Date().timeIntervalSince(oldest)
             if waitTime > 0 {
                 try? await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
             }
@@ -213,10 +211,17 @@ actor RateLimiter {
     }
     
     func recordRequest() {
+        cleanOldRequests()
         requests.append(Date())
     }
     
     var remainingRequests: Int {
-        maxRequests - requests.count
+        cleanOldRequests()
+        return maxRequests - requests.count
+    }
+    
+    private func cleanOldRequests() {
+        let now = Date()
+        requests.removeAll { now.timeIntervalSince($0) > timeWindow }
     }
 }

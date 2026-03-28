@@ -11,6 +11,14 @@ import CoreData
 import Combine
 
 struct PortfolioListView: View {
+    @Environment(\.managedObjectContext) private var viewContext
+    
+    @FetchRequest(
+        sortDescriptors: [SortDescriptor(\Portfolio.name)],
+        animation: .default
+    )
+    private var portfolios: FetchedResults<Portfolio>
+    
     @State private var viewModel: PortfolioListViewModel
     @State private var showingCreateSheet = false
     @State private var showingImportPicker = false
@@ -21,8 +29,8 @@ struct PortfolioListView: View {
     @State private var showingDeleteConfirmation = false
     @State private var exchangeRates: [String: Double] = [:]
     @State private var exchangeRateError: String?
+    @State private var refreshTrigger = UUID()
     @State private var cancellables = Set<AnyCancellable>()
-    @State private var refreshTask: Task<Void, Never>?
     
     init(viewModel: PortfolioListViewModel? = nil) {
         _viewModel = State(initialValue: viewModel ?? PortfolioListViewModel())
@@ -31,10 +39,9 @@ struct PortfolioListView: View {
     var body: some View {
         List(selection: $viewModel.selectedPortfolioId) {
             Section("投资组合") {
-                ForEach(viewModel.portfolios) { portfolio in
+                ForEach(portfolios) { portfolio in
                     NavigationLink(value: portfolio.id) {
                         PortfolioRowView(portfolio: portfolio, exchangeRates: exchangeRates)
-                            .id("\(portfolio.id?.uuidString ?? "")-\(portfolio.positions?.count ?? 0)-\(portfolio.updatedAt?.timeIntervalSince1970 ?? 0)")
                     }
                     .tag(portfolio.id)
                     .contextMenu {
@@ -59,11 +66,23 @@ struct PortfolioListView: View {
         .listStyle(.sidebar)
         .navigationTitle("投资组合")
         .onAppear {
+            print("🟢 ========== PortfolioListView onAppear ==========")
+            print("🟢 @FetchRequest returned \(portfolios.count) portfolios:")
+            for p in portfolios {
+                let positions = p.positions as? Set<Position> ?? []
+                print("🟢   Portfolio '\(p.name ?? "")' (id=\(p.id?.uuidString ?? "")): positions.count=\(positions.count), totalValue=\(p.totalValue)")
+                for pos in positions {
+                    print("🟢     - \(pos.symbol ?? "nil"): shares=\(pos.shares), currentValue=\(pos.currentValue ?? 0)")
+                }
+            }
+            print("🟢 refreshTrigger = \(refreshTrigger)")
+            
             Task {
                 await fetchExchangeRates()
             }
-            setupCoreDataObserver()
+            setupPortfolioChangeListener()
         }
+        .id(refreshTrigger)
         .toolbar {
             ToolbarItemGroup {
                 Button(action: { showingImportPicker = true }) {
@@ -83,7 +102,6 @@ struct PortfolioListView: View {
         }
         .sheet(item: $portfolioToEdit) { portfolio in
             EditPortfolioView(portfolio: portfolio) { _ in
-                viewModel.refreshPortfolios()
             }
         }
         .fileImporter(
@@ -116,7 +134,7 @@ struct PortfolioListView: View {
             }
         }
         .overlay {
-            if viewModel.portfolios.isEmpty {
+            if portfolios.isEmpty {
                 emptyStateView
             }
         }
@@ -182,37 +200,32 @@ struct PortfolioListView: View {
         }
     }
     
-    private func setupCoreDataObserver() {
-        NotificationCenter.default.publisher(
-            for: NSNotification.Name.NSManagedObjectContextObjectsDidChange,
-            object: viewModel.viewContext
-        )
-        .receive(on: DispatchQueue.main)
-        .sink { notification in
-            let hasInserted = (notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject>)?
-                .contains { $0 is Portfolio || $0 is Position } ?? false
-            let hasUpdated = (notification.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject>)?
-                .contains { $0 is Position } ?? false
-            let hasDeleted = (notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject>)?
-                .contains { $0 is Position } ?? false
-            
-            guard hasInserted || hasUpdated || hasDeleted else { return }
-            
-            refreshTask?.cancel()
-            refreshTask = Task {
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                if !Task.isCancelled {
-                    viewModel.refreshPortfolios()
-                    await fetchExchangeRates()
+    private func setupPortfolioChangeListener() {
+        NotificationCenter.default.publisher(for: .portfolioDataDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak viewContext] _ in
+                print("🟠 ========== Received .portfolioDataDidChange notification ==========")
+                
+                print("🟠 BEFORE refreshAllObjects():")
+                for p in portfolios {
+                    let positions = p.positions as? Set<Position> ?? []
+                    print("🟠   Portfolio '\(p.name ?? "")': positions.count=\(positions.count), totalValue=\(p.totalValue)")
+                    for pos in positions {
+                        print("🟠     - \(pos.symbol ?? "nil"): shares=\(pos.shares), currentValue=\(pos.currentValue ?? 0)")
+                    }
                 }
+                
+                viewContext?.refreshAllObjects()
+                refreshTrigger = UUID()
+                
+                print("🟠 AFTER refreshAllObjects(), refreshTrigger = \(refreshTrigger)")
             }
-        }
-        .store(in: &cancellables)
+            .store(in: &cancellables)
     }
 }
 
 struct PortfolioRowView: View {
-    let portfolio: Portfolio
+    @ObservedObject var portfolio: Portfolio
     let exchangeRates: [String: Double]
     
     var positionsArray: [Position] {
@@ -236,7 +249,27 @@ struct PortfolioRowView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let positions = portfolio.positions as? Set<Position> ?? []
+        let value = portfolio.totalValue
+        let cost = portfolio.totalCost
+        let pl = portfolio.totalProfitLoss
+        let plp = portfolio.profitLossPercentage
+        
+        let _ = print("""
+        🔵 ========== PortfolioRowView body called ==========
+        🔵 portfolio.name = \(portfolio.name ?? "")
+        🔵 portfolio.id = \(portfolio.id?.uuidString ?? "")
+        🔵 positions.count = \(positions.count)
+        🔵 positions detail: \(positions.map { "\($0.symbol ?? "nil"): shares=\($0.shares), currentValue=\($0.currentValue ?? 0)" })
+        🔵 totalValue = \(value)
+        🔵 totalCost = \(cost)
+        🔵 totalProfitLoss = \(pl)
+        🔵 profitLossPercentage = \(plp)
+        🔵 convertedValue = \(convertedValue)
+        🔵 convertedProfitLoss = \(convertedProfitLoss)
+        """)
+        
+        return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(portfolio.name ?? "未命名")
                     .font(.headline)

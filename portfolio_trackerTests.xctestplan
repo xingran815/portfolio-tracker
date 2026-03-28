@@ -1,0 +1,25 @@
+{
+  "configurations" : [
+    {
+      "id" : "EAD5A6BE-97FE-4EFE-9B41-9E4A3EDED203",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:portfolio_tracker.xcodeproj",
+        "identifier" : "1777D24B2F7819C300B706D0",
+        "name" : "portfolio_trackerTests"
+      }
+    }
+  ],
+  "version" : 1
+}
