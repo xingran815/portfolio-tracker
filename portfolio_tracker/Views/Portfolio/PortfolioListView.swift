@@ -66,6 +66,17 @@ struct PortfolioListView: View {
         .listStyle(.sidebar)
         .navigationTitle("投资组合")
         .onAppear {
+            print("🟢 ========== PortfolioListView onAppear ==========")
+            print("🟢 @FetchRequest returned \(portfolios.count) portfolios:")
+            for p in portfolios {
+                let positions = p.positions as? Set<Position> ?? []
+                print("🟢   Portfolio '\(p.name ?? "")' (id=\(p.id?.uuidString ?? "")): positions.count=\(positions.count), totalValue=\(p.totalValue)")
+                for pos in positions {
+                    print("🟢     - \(pos.symbol ?? "nil"): shares=\(pos.shares), currentValue=\(pos.currentValue ?? 0)")
+                }
+            }
+            print("🟢 refreshTrigger = \(refreshTrigger)")
+            
             Task {
                 await fetchExchangeRates()
             }
@@ -193,8 +204,21 @@ struct PortfolioListView: View {
         NotificationCenter.default.publisher(for: .portfolioDataDidChange)
             .receive(on: DispatchQueue.main)
             .sink { [weak viewContext] _ in
+                print("🟠 ========== Received .portfolioDataDidChange notification ==========")
+                
+                print("🟠 BEFORE refreshAllObjects():")
+                for p in portfolios {
+                    let positions = p.positions as? Set<Position> ?? []
+                    print("🟠   Portfolio '\(p.name ?? "")': positions.count=\(positions.count), totalValue=\(p.totalValue)")
+                    for pos in positions {
+                        print("🟠     - \(pos.symbol ?? "nil"): shares=\(pos.shares), currentValue=\(pos.currentValue ?? 0)")
+                    }
+                }
+                
                 viewContext?.refreshAllObjects()
                 refreshTrigger = UUID()
+                
+                print("🟠 AFTER refreshAllObjects(), refreshTrigger = \(refreshTrigger)")
             }
             .store(in: &cancellables)
     }
@@ -225,7 +249,27 @@ struct PortfolioRowView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let positions = portfolio.positions as? Set<Position> ?? []
+        let value = portfolio.totalValue
+        let cost = portfolio.totalCost
+        let pl = portfolio.totalProfitLoss
+        let plp = portfolio.profitLossPercentage
+        
+        let _ = print("""
+        🔵 ========== PortfolioRowView body called ==========
+        🔵 portfolio.name = \(portfolio.name ?? "")
+        🔵 portfolio.id = \(portfolio.id?.uuidString ?? "")
+        🔵 positions.count = \(positions.count)
+        🔵 positions detail: \(positions.map { "\($0.symbol ?? "nil"): shares=\($0.shares), currentValue=\($0.currentValue ?? 0)" })
+        🔵 totalValue = \(value)
+        🔵 totalCost = \(cost)
+        🔵 totalProfitLoss = \(pl)
+        🔵 profitLossPercentage = \(plp)
+        🔵 convertedValue = \(convertedValue)
+        🔵 convertedProfitLoss = \(convertedProfitLoss)
+        """)
+        
+        return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(portfolio.name ?? "未命名")
                     .font(.headline)

@@ -911,4 +911,241 @@ final class ViewModelSyncTests: XCTestCase {
         XCTAssertEqual(refreshedPortfolio.positions?.count, 1, "Should have 1 position after refresh")
         XCTAssertEqual(refreshedPortfolio.totalValue, 10000, "totalValue should be 10000 after refresh")
     }
+    
+    // MARK: - Bug Reproduction Tests
+    
+    /// 复现 bug: Position.create() 后 portfolio.positions 是否正确更新
+    func testBug_PositionCreate_updatesPortfolioPositions() throws {
+        print("🔴 BUG TEST: testBug_PositionCreate_updatesPortfolioPositions")
+        
+        // 1. 创建 portfolio
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        try viewContext.save()
+        
+        print("🔴 Step 1 - Initial: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        XCTAssertEqual(portfolio.positions?.count, 0, "Initial: should have 0 positions")
+        
+        // 2. 创建 position 并设置 portfolio
+        let position = Position.create(
+            in: viewContext,
+            symbol: "018344",
+            name: "Test Fund",
+            assetType: .fund,
+            market: .cn,
+            shares: 1000,
+            costBasis: 1.0,
+            portfolio: portfolio
+        )
+        
+        print("🔴 Step 2 - After create (before save):")
+        print("🔴   portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        print("🔴   position.portfolio = \(position.portfolio?.name ?? "nil")")
+        
+        // 3. 保存
+        try viewContext.save()
+        
+        print("🔴 Step 3 - After save: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        
+        // 4. 验证
+        XCTAssertEqual(portfolio.positions?.count, 1, "⚠️ BUG: portfolio.positions should have 1 position after save")
+    }
+    
+    /// 复现 bug: 添加多个 position 后 portfolio.positions 是否正确
+    func testBug_AddMultiplePositions_portfolioPositionsCount() throws {
+        print("🔴 BUG TEST: testBug_AddMultiplePositions_portfolioPositionsCount")
+        
+        // 1. 创建 portfolio
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        try viewContext.save()
+        
+        // 2. 添加第一个 position
+        let position1 = Position.create(
+            in: viewContext,
+            symbol: "018344",
+            name: "Fund 1",
+            assetType: .fund,
+            market: .cn,
+            shares: 1000,
+            costBasis: 1.0,
+            portfolio: portfolio
+        )
+        
+        try viewContext.save()
+        
+        print("🔴 After 1st position: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        XCTAssertEqual(portfolio.positions?.count, 1)
+        
+        // 3. 添加第二个 position
+        let position2 = Position.create(
+            in: viewContext,
+            symbol: "018345",
+            name: "Fund 2",
+            assetType: .fund,
+            market: .cn,
+            shares: 2000,
+            costBasis: 1.0,
+            portfolio: portfolio
+        )
+        
+        portfolio.updatedAt = Date()
+        try viewContext.save()
+        
+        print("🔴 After 2nd position: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        
+        // 验证通过 fetch request 查询
+        let request = Position.fetchRequest()
+        request.predicate = NSPredicate(format: "portfolio == %@", portfolio)
+        let fetchedPositions = try viewContext.fetch(request)
+        
+        print("🔴 Fetched positions.count = \(fetchedPositions.count)")
+        
+        // 5. 验证
+        XCTAssertEqual(fetchedPositions.count, 2, "Fetch request should return 2 positions")
+        XCTAssertEqual(portfolio.positions?.count, 2, "⚠️ BUG: portfolio.positions should have 2 positions")
+    }
+    
+    /// 复现 bug: refreshData() 是否导致 portfolio.positions 缓存问题
+    func testBug_RefreshData_portfolioPositionsCache() throws {
+        print("🔴 BUG TEST: testBug_RefreshData_portfolioPositionsCache")
+        
+        // 1. 创建 portfolio + position
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        let position1 = Position.create(
+            in: viewContext,
+            symbol: "018344",
+            name: "Fund 1",
+            assetType: .fund,
+            market: .cn,
+            shares: 1000,
+            costBasis: 1.0,
+            portfolio: portfolio
+        )
+        
+        try viewContext.save()
+        
+        print("🔴 After 1st position: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        
+        // 2. 调用 refreshData() (模拟 PortfolioDetailViewModel.refreshData())
+        print("🔴 Calling refreshData()...")
+        viewContext.refresh(portfolio, mergeChanges: false)
+        
+        // 注意：此时 portfolio 已变成 fault，访问 positions 会触发重新加载
+        let positionsAfterRefresh = portfolio.positions as? Set<Position> ?? []
+        print("🔴 After portfolio.refresh: positions.count = \(positionsAfterRefresh.count)")
+        
+        for pos in positionsAfterRefresh {
+            viewContext.refresh(pos, mergeChanges: false)
+        }
+        
+        // 3. 添加第二个 position
+        let position2 = Position.create(
+            in: viewContext,
+            symbol: "018345",
+            name: "Fund 2",
+            assetType: .fund,
+            market: .cn,
+            shares: 2000,
+            costBasis: 1.0,
+            portfolio: portfolio
+        )
+        
+        portfolio.updatedAt = Date()
+        try viewContext.save()
+        
+        print("🔴 After 2nd position: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        
+        // 4. 验证
+        let request = Position.fetchRequest()
+        request.predicate = NSPredicate(format: "portfolio == %@", portfolio)
+        let fetchedPositions = try viewContext.fetch(request)
+        
+        print("🔴 Fetched positions.count = \(fetchedPositions.count)")
+        print("🔴 portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        
+        XCTAssertEqual(fetchedPositions.count, 2, "Fetch request should return 2 positions")
+        XCTAssertEqual(portfolio.positions?.count, 2, "⚠️ BUG: portfolio.positions should have 2 positions after refreshData + add")
+    }
+    
+    /// 复现 bug: 使用 addPositionWithTransaction 后 portfolio.positions 是否正确
+    func testBug_AddPositionWithTransaction_portfolioPositionsMismatch() throws {
+        print("🔴 BUG TEST: testBug_AddPositionWithTransaction_portfolioPositionsMismatch")
+        print("🔴 This test reproduces the exact issue from user's log:")
+        print("🔴   loadPositions() returns 9, but portfolio.positions returns 7")
+        
+        // 1. 创建 portfolio
+        let portfolio = Portfolio(context: viewContext)
+        portfolio.id = UUID()
+        portfolio.name = "Test Portfolio"
+        
+        try viewContext.save()
+        
+        // 2. 使用 PortfolioDetailViewModel 添加 position
+        let viewModel = PortfolioDetailViewModel(context: viewContext)
+        viewModel.setPortfolio(portfolio)
+        
+        print("🔴 Before add: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        print("🔴 Before add: viewModel.positions.count = \(viewModel.positions.count)")
+        
+        // 3. 添加第一个 position
+        try viewModel.addPositionWithTransaction(
+            symbol: "018344",
+            name: "Test Fund 1",
+            assetType: .fund,
+            market: .cn,
+            shares: 1000,
+            costBasis: 1.0
+        )
+        
+        print("🔴 After 1st add:")
+        print("🔴   portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        print("🔴   viewModel.positions.count = \(viewModel.positions.count)")
+        
+        XCTAssertEqual(viewModel.positions.count, 1, "viewModel.positions should have 1 position")
+        XCTAssertEqual(portfolio.positions?.count, 1, "⚠️ portfolio.positions should have 1 position")
+        
+        // 4. 添加第二个 position
+        try viewModel.addPositionWithTransaction(
+            symbol: "018345",
+            name: "Test Fund 2",
+            assetType: .fund,
+            market: .cn,
+            shares: 2000,
+            costBasis: 1.0
+        )
+        
+        print("🔴 After 2nd add:")
+        print("🔴   portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        print("🔴   viewModel.positions.count = \(viewModel.positions.count)")
+        
+        // 5. 验证 - 这里可能会复现 bug
+        XCTAssertEqual(viewModel.positions.count, 2, "viewModel.positions should have 2 positions")
+        XCTAssertEqual(portfolio.positions?.count, 2, "⚠️ BUG: portfolio.positions should have 2 positions")
+        
+        // 6. 添加第三个 position
+        try viewModel.addPositionWithTransaction(
+            symbol: "018346",
+            name: "Test Fund 3",
+            assetType: .fund,
+            market: .cn,
+            shares: 3000,
+            costBasis: 1.0
+        )
+        
+        print("🔴 After 3rd add:")
+        print("🔴   portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
+        print("🔴   viewModel.positions.count = \(viewModel.positions.count)")
+        
+        // 7. 验证
+        XCTAssertEqual(viewModel.positions.count, 3, "viewModel.positions should have 3 positions")
+        XCTAssertEqual(portfolio.positions?.count, 3, "⚠️ BUG: portfolio.positions should have 3 positions")
+    }
 }
