@@ -13,27 +13,20 @@ import Combine
 @MainActor
 final class CoreDataNotificationTests: XCTestCase {
     
-    var container: NSPersistentContainer!
+    var persistenceController: PersistenceController!
     var viewContext: NSManagedObjectContext!
     var cancellables: Set<AnyCancellable>!
     
     override func setUp() async throws {
         try await super.setUp()
         
-        container = NSPersistentContainer(name: "portfolio_tracker")
-        let description = container.persistentStoreDescriptions.first!
-        description.type = NSInMemoryStoreType
-        container.loadPersistentStores { _, error in
-            if let error = error {
-                fatalError("Failed to load store: \(error)")
-            }
-        }
-        viewContext = container.viewContext
+        persistenceController = PersistenceController(inMemory: true)
+        viewContext = persistenceController.viewContext
         cancellables = []
     }
     
     override func tearDown() async throws {
-        container = nil
+        persistenceController = nil
         viewContext = nil
         cancellables = nil
         try await super.tearDown()

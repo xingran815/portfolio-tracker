@@ -17,6 +17,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1766CFBC2F784616003DF803 /* portfolio_trackerTests.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = portfolio_trackerTests.xctestplan; sourceTree = "<group>"; };
 		1777D24C2F7819C300B706D0 /* portfolio_trackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = portfolio_trackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		17C6B72B2F5E3D1000C2A0C2 /* portfolio_tracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = portfolio_tracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -55,6 +56,7 @@
 		17C6B7222F5E3D0F00C2A0C2 = {
 			isa = PBXGroup;
 			children = (
+				1766CFBC2F784616003DF803 /* portfolio_trackerTests.xctestplan */,
 				17C6B72D2F5E3D1000C2A0C2 /* portfolio_tracker */,
 				1777D24D2F7819C300B706D0 /* portfolio_trackerTests */,
 				17C6B72C2F5E3D1000C2A0C2 /* Products */,

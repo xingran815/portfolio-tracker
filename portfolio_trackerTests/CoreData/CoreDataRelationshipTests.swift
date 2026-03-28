@@ -12,25 +12,18 @@ import CoreData
 @MainActor
 final class CoreDataRelationshipTests: XCTestCase {
     
-    var container: NSPersistentContainer!
+    var persistenceController: PersistenceController!
     var viewContext: NSManagedObjectContext!
     
     override func setUp() async throws {
         try await super.setUp()
         
-        container = NSPersistentContainer(name: "portfolio_tracker")
-        let description = container.persistentStoreDescriptions.first!
-        description.type = NSInMemoryStoreType
-        container.loadPersistentStores { _, error in
-            if let error = error {
-                fatalError("Failed to load store: \(error)")
-            }
-        }
-        viewContext = container.viewContext
+        persistenceController = PersistenceController(inMemory: true)
+        viewContext = persistenceController.viewContext
     }
     
     override func tearDown() async throws {
-        container = nil
+        persistenceController = nil
         viewContext = nil
         try await super.tearDown()
     }
