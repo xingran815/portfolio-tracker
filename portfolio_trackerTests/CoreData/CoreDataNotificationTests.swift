@@ -35,8 +35,6 @@ final class CoreDataNotificationTests: XCTestCase {
     // MARK: - Insert Notification Tests
     
     func testInsertPosition_triggersInsertedNotification() async throws {
-        print("🟢 TEST: testInsertPosition_triggersInsertedNotification")
-        
         let expectation = XCTestExpectation(description: "Insert notification received")
         
         NotificationCenter.default.publisher(
@@ -46,8 +44,6 @@ final class CoreDataNotificationTests: XCTestCase {
         .sink { notification in
             if let inserted = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> {
                 let hasPosition = inserted.contains { $0 is Position }
-                let hasPortfolio = inserted.contains { $0 is Portfolio }
-                print("🟢 Notification: inserted \(inserted.count) objects, hasPosition=\(hasPosition), hasPortfolio=\(hasPortfolio)")
                 if hasPosition {
                     expectation.fulfill()
                 }
@@ -70,8 +66,6 @@ final class CoreDataNotificationTests: XCTestCase {
     }
     
     func testInsertPortfolio_triggersInsertedNotification() async throws {
-        print("🟢 TEST: testInsertPortfolio_triggersInsertedNotification")
-        
         let expectation = XCTestExpectation(description: "Insert notification received")
         
         NotificationCenter.default.publisher(
@@ -81,7 +75,6 @@ final class CoreDataNotificationTests: XCTestCase {
         .sink { notification in
             if let inserted = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> {
                 let hasPortfolio = inserted.contains { $0 is Portfolio }
-                print("🟢 Notification: inserted \(inserted.count) objects, hasPortfolio=\(hasPortfolio)")
                 if hasPortfolio {
                     expectation.fulfill()
                 }
@@ -101,8 +94,6 @@ final class CoreDataNotificationTests: XCTestCase {
     // MARK: - Update Notification Tests
     
     func testUpdatePosition_triggersUpdatedNotification() async throws {
-        print("🟢 TEST: testUpdatePosition_triggersUpdatedNotification")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
@@ -124,8 +115,6 @@ final class CoreDataNotificationTests: XCTestCase {
         .sink { notification in
             if let updated = notification.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject> {
                 let hasPosition = updated.contains { $0 is Position }
-                let hasPortfolio = updated.contains { $0 is Portfolio }
-                print("🟢 Notification: updated \(updated.count) objects, hasPosition=\(hasPosition), hasPortfolio=\(hasPortfolio)")
                 if hasPosition {
                     expectation.fulfill()
                 }
@@ -140,8 +129,6 @@ final class CoreDataNotificationTests: XCTestCase {
     }
     
     func testUpdatePortfolio_triggersUpdatedNotification() async throws {
-        print("🟢 TEST: testUpdatePortfolio_triggersUpdatedNotification")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
@@ -157,7 +144,6 @@ final class CoreDataNotificationTests: XCTestCase {
         .sink { notification in
             if let updated = notification.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject> {
                 let hasPortfolio = updated.contains { $0 is Portfolio }
-                print("🟢 Notification: updated \(updated.count) objects, hasPortfolio=\(hasPortfolio)")
                 if hasPortfolio {
                     expectation.fulfill()
                 }
@@ -174,8 +160,6 @@ final class CoreDataNotificationTests: XCTestCase {
     // MARK: - Delete Notification Tests
     
     func testDeletePosition_triggersDeletedNotification() async throws {
-        print("🟢 TEST: testDeletePosition_triggersDeletedNotification")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
@@ -196,7 +180,6 @@ final class CoreDataNotificationTests: XCTestCase {
         .sink { notification in
             if let deleted = notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject> {
                 let hasPosition = deleted.contains { $0 is Position }
-                print("🟢 Notification: deleted \(deleted.count) objects, hasPosition=\(hasPosition)")
                 if hasPosition {
                     expectation.fulfill()
                 }
@@ -211,8 +194,6 @@ final class CoreDataNotificationTests: XCTestCase {
     }
     
     func testDeletePortfolio_triggersDeletedNotification() async throws {
-        print("🟢 TEST: testDeletePortfolio_triggersDeletedNotification")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
@@ -228,7 +209,6 @@ final class CoreDataNotificationTests: XCTestCase {
         .sink { notification in
             if let deleted = notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject> {
                 let hasPortfolio = deleted.contains { $0 is Portfolio }
-                print("🟢 Notification: deleted \(deleted.count) objects, hasPortfolio=\(hasPortfolio)")
                 if hasPortfolio {
                     expectation.fulfill()
                 }

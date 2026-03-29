@@ -35,32 +35,24 @@ final class NSManagedObjectObservableTests: XCTestCase {
     // MARK: - ObservableObject Conformance Tests
     
     func testPortfolio_isObservableObject() {
-        print("🟡 TEST: testPortfolio_isObservableObject")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
         
         XCTAssertTrue(portfolio is any ObservableObject, "Portfolio should conform to ObservableObject")
-        print("🟡 Portfolio conforms to ObservableObject: true")
     }
     
     func testPosition_isObservableObject() {
-        print("🟡 TEST: testPosition_isObservableObject")
-        
         let position = Position(context: viewContext)
         position.id = UUID()
         position.symbol = "AAPL"
         
         XCTAssertTrue(position is any ObservableObject, "Position should conform to ObservableObject")
-        print("🟡 Position conforms to ObservableObject: true")
     }
     
     // MARK: - Property Change Notification Tests
     
     func testPortfolio_nameChange_triggersObjectWillChange() async throws {
-        print("🟡 TEST: testPortfolio_nameChange_triggersObjectWillChange")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
@@ -71,7 +63,6 @@ final class NSManagedObjectObservableTests: XCTestCase {
         
         portfolio.objectWillChange
             .sink {
-                print("🟡 Portfolio objectWillChange triggered")
                 expectation.fulfill()
             }
             .store(in: &cancellables)
@@ -83,8 +74,6 @@ final class NSManagedObjectObservableTests: XCTestCase {
     }
     
     func testPosition_sharesChange_triggersObjectWillChange() async throws {
-        print("🟡 TEST: testPosition_sharesChange_triggersObjectWillChange")
-        
         let position = Position(context: viewContext)
         position.id = UUID()
         position.symbol = "AAPL"
@@ -96,7 +85,6 @@ final class NSManagedObjectObservableTests: XCTestCase {
         
         position.objectWillChange
             .sink {
-                print("🟡 Position objectWillChange triggered")
                 expectation.fulfill()
             }
             .store(in: &cancellables)
@@ -110,8 +98,6 @@ final class NSManagedObjectObservableTests: XCTestCase {
     // MARK: - Relationship Change Notification Tests
     
     func testPortfolio_addPosition_triggersObjectWillChange() async throws {
-        print("🟡 TEST: testPortfolio_addPosition_triggersObjectWillChange")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
@@ -122,7 +108,6 @@ final class NSManagedObjectObservableTests: XCTestCase {
         
         portfolio.objectWillChange
             .sink {
-                print("🟡 Portfolio objectWillChange triggered (position added)")
                 expectation.fulfill()
             }
             .store(in: &cancellables)
@@ -138,8 +123,6 @@ final class NSManagedObjectObservableTests: XCTestCase {
     }
     
     func testPosition_setPortfolio_triggersObjectWillChange() async throws {
-        print("🟡 TEST: testPosition_setPortfolio_triggersObjectWillChange")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
@@ -154,7 +137,6 @@ final class NSManagedObjectObservableTests: XCTestCase {
         
         position.objectWillChange
             .sink {
-                print("🟡 Position objectWillChange triggered (portfolio set)")
                 expectation.fulfill()
             }
             .store(in: &cancellables)

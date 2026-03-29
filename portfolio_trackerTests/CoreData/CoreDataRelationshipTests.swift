@@ -31,13 +31,9 @@ final class CoreDataRelationshipTests: XCTestCase {
     // MARK: - Portfolio-Position Relationship Tests
     
     func testAddPosition_updatesPortfolioPositions() throws {
-        print("🔵 TEST: testAddPosition_updatesPortfolioPositions")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
-        
-        print("🔵 Before add: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
         
         let position = Position(context: viewContext)
         position.id = UUID()
@@ -45,8 +41,6 @@ final class CoreDataRelationshipTests: XCTestCase {
         position.portfolio = portfolio
         
         try viewContext.save()
-        
-        print("🔵 After save: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
         
         let positions = portfolio.positions as? Set<Position>
         XCTAssertNotNil(positions, "positions should not be nil")
@@ -55,8 +49,6 @@ final class CoreDataRelationshipTests: XCTestCase {
     }
     
     func testDeletePosition_updatesPortfolioPositions() throws {
-        print("🔵 TEST: testDeletePosition_updatesPortfolioPositions")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
@@ -68,26 +60,20 @@ final class CoreDataRelationshipTests: XCTestCase {
         
         try viewContext.save()
         
-        print("🔵 Before delete: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
         XCTAssertEqual(portfolio.positions?.count, 1, "should have 1 position before delete")
         
         viewContext.delete(position)
         try viewContext.save()
         
-        print("🔵 After delete: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
         XCTAssertEqual(portfolio.positions?.count, 0, "should have 0 positions after delete")
     }
     
     func testFetchPortfolio_afterAddingPosition() throws {
-        print("🔵 TEST: testFetchPortfolio_afterAddingPosition")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
         
         try viewContext.save()
-        
-        print("🔵 After first save: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
         
         let position = Position(context: viewContext)
         position.id = UUID()
@@ -95,8 +81,6 @@ final class CoreDataRelationshipTests: XCTestCase {
         position.portfolio = portfolio
         
         try viewContext.save()
-        
-        print("🔵 After second save: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
         
         let request = Portfolio.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", portfolio.id! as CVarArg)
@@ -105,13 +89,10 @@ final class CoreDataRelationshipTests: XCTestCase {
         XCTAssertEqual(fetchedPortfolios.count, 1, "should fetch 1 portfolio")
         
         let fetchedPortfolio = fetchedPortfolios.first!
-        print("🔵 Fetched portfolio: positions.count = \(fetchedPortfolio.positions?.count ?? -1)")
         XCTAssertEqual(fetchedPortfolio.positions?.count, 1, "fetched portfolio should have 1 position")
     }
     
     func testMultiplePositions_correctCount() throws {
-        print("🔵 TEST: testMultiplePositions_correctCount")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
@@ -125,13 +106,10 @@ final class CoreDataRelationshipTests: XCTestCase {
         
         try viewContext.save()
         
-        print("🔵 After adding 5 positions: portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
         XCTAssertEqual(portfolio.positions?.count, 5, "should have 5 positions")
     }
     
     func testPositionPortfolioRelationship_bidirectional() throws {
-        print("🔵 TEST: testPositionPortfolioRelationship_bidirectional")
-        
         let portfolio = Portfolio(context: viewContext)
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
@@ -142,9 +120,6 @@ final class CoreDataRelationshipTests: XCTestCase {
         position.portfolio = portfolio
         
         try viewContext.save()
-        
-        print("🔵 position.portfolio.name = \(position.portfolio?.name ?? "nil")")
-        print("🔵 portfolio.positions.count = \(portfolio.positions?.count ?? -1)")
         
         XCTAssertEqual(position.portfolio?.id, portfolio.id, "position.portfolio should match")
         XCTAssertEqual(portfolio.positions?.count, 1, "portfolio.positions should contain 1 position")

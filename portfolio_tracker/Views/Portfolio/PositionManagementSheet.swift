@@ -495,44 +495,14 @@ struct PositionManagementSheet: View {
                     await viewModel.updatePriceForSymbol(trimmedSymbol)
                     await MainActor.run {
                         viewModel.refreshData()
-                        
-                        // Diagnostic logging
-                        if let portfolio = viewModel.portfolio {
-                            let positions = portfolio.positions as? Set<Position> ?? []
-                            print("🟡 ========== PositionManagementSheet (after updatePrice) ==========")
-                            print("🟡 mode = \(mode)")
-                            print("🟡 portfolio.name = \(portfolio.name ?? "")")
-                            print("🟡 portfolio.positions.count = \(positions.count)")
-                            print("🟡 portfolio.totalValue = \(portfolio.totalValue)")
-                            print("🟡 positions: \(positions.map { "\($0.symbol ?? "nil"): \($0.shares)" })")
-                        }
-                        
                         NotificationCenter.default.post(name: .portfolioDataDidChange, object: nil)
-                        print("🟡 Posted .portfolioDataDidChange notification")
-                        
                         isUpdatingPrice = false
                         dismiss()
                     }
                 }
             } else {
                 viewModel.refreshData()
-                
-                // Diagnostic logging
-                if let portfolio = viewModel.portfolio {
-                    let positions = portfolio.positions as? Set<Position> ?? []
-                    print("🟡 ========== PositionManagementSheet (after operation) ==========")
-                    print("🟡 mode = \(mode)")
-                    print("🟡 portfolio.name = \(portfolio.name ?? "")")
-                    print("🟡 portfolio.positions.count = \(positions.count)")
-                    print("🟡 portfolio.totalValue = \(portfolio.totalValue)")
-                    print("🟡 portfolio.totalCost = \(portfolio.totalCost)")
-                    print("🟡 portfolio.totalProfitLoss = \(portfolio.totalProfitLoss)")
-                    print("🟡 positions: \(positions.map { "\($0.symbol ?? "nil"): \($0.shares)" })")
-                }
-                
                 NotificationCenter.default.post(name: .portfolioDataDidChange, object: nil)
-                print("🟡 Posted .portfolioDataDidChange notification")
-                
                 dismiss()
             }
         } catch {
