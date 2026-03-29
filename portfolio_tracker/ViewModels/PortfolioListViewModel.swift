@@ -33,6 +33,8 @@ final class PortfolioListViewModel {
     let viewContext: NSManagedObjectContext
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "PortfolioListViewModel")
     
+    nonisolated deinit {}
+    
     // MARK: - Initialization
     
     init(context: NSManagedObjectContext = PersistenceController.shared.viewContext) {

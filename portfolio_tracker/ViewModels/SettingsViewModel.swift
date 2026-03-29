@@ -77,6 +77,8 @@ final class SettingsViewModel {
     private let apiKeyManager = APIKeyManager.shared
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "SettingsViewModel")
     
+    nonisolated deinit {}
+    
     // MARK: - Initialization
     
     init() {

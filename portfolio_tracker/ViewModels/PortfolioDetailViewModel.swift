@@ -50,6 +50,8 @@ final class PortfolioDetailViewModel {
     private let chinaFundProvider: ChinaFundProvider
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "PortfolioDetailViewModel")
     
+    nonisolated deinit {}
+    
     // MARK: - Initialization
     
     init(
