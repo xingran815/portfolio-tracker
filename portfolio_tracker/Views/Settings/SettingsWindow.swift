@@ -157,9 +157,11 @@ struct SettingsWindow: View {
                     
                     Spacer()
                     
-                    Link(destination: URL(string: APIService.alphaVantage.documentationURL)!) {
-                        Text("获取 API Key →")
-                            .font(.caption)
+                    if let url = APIService.alphaVantage.documentationURLValue {
+                        Link(destination: url) {
+                            Text("获取 API Key →")
+                                .font(.caption)
+                        }
                     }
                 }
                 
@@ -242,9 +244,11 @@ struct SettingsWindow: View {
                     
                     Spacer()
                     
-                    Link(destination: URL(string: APIService.kimi.documentationURL)!) {
-                        Text("获取 API Key →")
-                            .font(.caption)
+                    if let url = APIService.kimi.documentationURLValue {
+                        Link(destination: url) {
+                            Text("获取 API Key →")
+                                .font(.caption)
+                        }
                     }
                 }
                 
@@ -325,8 +329,12 @@ struct SettingsWindow: View {
             
             VStack(spacing: 8) {
                 HStack(spacing: 16) {
-                    Link("GitHub", destination: URL(string: "https://github.com/xingran815/portfolio-tracker")!)
-                    Link("反馈问题", destination: URL(string: "https://github.com/xingran815/portfolio-tracker/issues")!)
+                    if let githubURL = URL(string: "https://github.com/xingran815/portfolio-tracker") {
+                        Link("GitHub", destination: githubURL)
+                    }
+                    if let issuesURL = URL(string: "https://github.com/xingran815/portfolio-tracker/issues") {
+                        Link("反馈问题", destination: issuesURL)
+                    }
                 }
                 
                 Text("© 2026 PortfolioTracker. All rights reserved.")

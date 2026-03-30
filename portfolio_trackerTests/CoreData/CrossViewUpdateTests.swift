@@ -59,7 +59,10 @@ final class CrossViewUpdateTests: XCTestCase {
         portfolio.name = "Test"
         try viewContext.save()
         
-        let portfolioId = portfolio.id!
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
         
         let position = Position(context: viewContext)
         position.id = UUID()
@@ -77,7 +80,10 @@ final class CrossViewUpdateTests: XCTestCase {
         
         XCTAssertEqual(fetchedPortfolios.count, 1, "Should fetch 1 portfolio")
         
-        let fetchedPortfolio = fetchedPortfolios.first!
+        guard let fetchedPortfolio = fetchedPortfolios.first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
         XCTAssertEqual(fetchedPortfolio.positions?.count, 1, "Fetched portfolio should have 1 position")
         XCTAssertEqual(fetchedPortfolio.totalValue, 20000, "Fetched portfolio should have correct totalValue")
     }
@@ -97,11 +103,17 @@ final class CrossViewUpdateTests: XCTestCase {
         
         try viewContext.save()
         
-        let portfolioId = portfolio.id!
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
         
         var request = Portfolio.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
-        var fetchedPortfolio = try viewContext.fetch(request).first!
+        guard var fetchedPortfolio = try viewContext.fetch(request).first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
         
         XCTAssertEqual(fetchedPortfolio.totalValue, 20000)
         
@@ -110,7 +122,11 @@ final class CrossViewUpdateTests: XCTestCase {
         
         request = Portfolio.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
-        fetchedPortfolio = try viewContext.fetch(request).first!
+        guard let refetchedPortfolio = try viewContext.fetch(request).first else {
+            XCTFail("Should have refetched a portfolio")
+            return
+        }
+        fetchedPortfolio = refetchedPortfolio
         
         XCTAssertEqual(fetchedPortfolio.totalValue, 40000, "Fetched portfolio should reflect edited position")
     }
@@ -138,11 +154,17 @@ final class CrossViewUpdateTests: XCTestCase {
         
         try viewContext.save()
         
-        let portfolioId = portfolio.id!
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
         
         var request = Portfolio.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
-        var fetchedPortfolio = try viewContext.fetch(request).first!
+        guard var fetchedPortfolio = try viewContext.fetch(request).first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
         
         XCTAssertEqual(fetchedPortfolio.positions?.count, 2)
         XCTAssertEqual(fetchedPortfolio.totalValue, 40000)
@@ -152,7 +174,11 @@ final class CrossViewUpdateTests: XCTestCase {
         
         request = Portfolio.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
-        fetchedPortfolio = try viewContext.fetch(request).first!
+        guard let refetchedPortfolio = try viewContext.fetch(request).first else {
+            XCTFail("Should have refetched a portfolio")
+            return
+        }
+        fetchedPortfolio = refetchedPortfolio
         
         XCTAssertEqual(fetchedPortfolio.positions?.count, 1, "Should have 1 position after delete")
         XCTAssertEqual(fetchedPortfolio.totalValue, 20000, "totalValue should be 20000 after deleting AAPL")
@@ -167,7 +193,10 @@ final class CrossViewUpdateTests: XCTestCase {
         
         try viewContext.save()
         
-        let portfolioId = portfolio.id!
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
         
         let backgroundContext = persistenceController.newBackgroundContext()
         
@@ -194,7 +223,11 @@ final class CrossViewUpdateTests: XCTestCase {
         
         let request = Portfolio.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
-        let fetchedPortfolio = try viewContext.fetch(request).first!
+        guard let fetchedPortfolio = try viewContext.fetch(request).first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
+        _ = fetchedPortfolio
     }
     
     func testBackgroundContextChange_propagatesToViewContext() async throws {
@@ -204,7 +237,10 @@ final class CrossViewUpdateTests: XCTestCase {
         
         try viewContext.save()
         
-        let portfolioId = portfolio.id!
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
         
         await persistenceController.performBackgroundTask { context in
             let request = Portfolio.fetchRequest()
@@ -232,7 +268,11 @@ final class CrossViewUpdateTests: XCTestCase {
         
         let request = Portfolio.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
-        let fetchedPortfolio = try viewContext.fetch(request).first!
+        guard let fetchedPortfolio = try viewContext.fetch(request).first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
+        _ = fetchedPortfolio
     }
     
     // MARK: - Refresh Tests
@@ -266,7 +306,10 @@ final class CrossViewUpdateTests: XCTestCase {
         
         try viewContext.save()
         
-        let portfolioId = portfolio.id!
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
         
         let position = Position(context: viewContext)
         position.id = UUID()
@@ -282,7 +325,10 @@ final class CrossViewUpdateTests: XCTestCase {
         
         let request = Portfolio.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
-        let fetchedPortfolio = try viewContext.fetch(request).first!
+        guard let fetchedPortfolio = try viewContext.fetch(request).first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
         
         XCTAssertEqual(fetchedPortfolio.positions?.count, 1, "Should have 1 position after refreshAllObjects")
         XCTAssertEqual(fetchedPortfolio.totalValue, 20000, "totalValue should be correct after refreshAllObjects")

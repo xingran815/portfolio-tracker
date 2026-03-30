@@ -266,9 +266,16 @@ final class ViewModelSyncTests: XCTestCase {
         
         // 3. 模拟 @FetchRequest 重新获取数据
         let request = Portfolio.fetchRequest()
-        request.predicate = NSPredicate(format: "id == %@", portfolio.id! as CVarArg)
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
+        request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
         let fetchedPortfolios = try viewContext.fetch(request)
-        let fetchedPortfolio = fetchedPortfolios.first!
+        guard let fetchedPortfolio = fetchedPortfolios.first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
         
         print("🔴 After re-fetch (simulating @FetchRequest update):")
         print("🔴   fetchedPortfolio.positions.count = \(fetchedPortfolio.positions?.count ?? -1)")
@@ -703,7 +710,10 @@ final class ViewModelSyncTests: XCTestCase {
         try viewContext.save()
         
         // 保存 portfolio 的 ID 用于后续 fetch
-        let portfolioId = portfolio.id!
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
         
         // 2. 添加现金 position
         let cashPosition = Position(context: viewContext)
@@ -731,7 +741,10 @@ final class ViewModelSyncTests: XCTestCase {
         let request = Portfolio.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
         let fetchedPortfolios = try viewContext.fetch(request)
-        let refreshedPortfolio = fetchedPortfolios.first!
+        guard let refreshedPortfolio = fetchedPortfolios.first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
         
         print("🟤 After refreshAllObjects() and re-fetch:")
         print("🟤   refreshedPortfolio.positions.count = \(refreshedPortfolio.positions?.count ?? -1)")
@@ -755,7 +768,10 @@ final class ViewModelSyncTests: XCTestCase {
         
         try viewContext.save()
         
-        let portfolioId = portfolio.id!
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
         
         // 2. 添加现金 position
         var cashPosition = Position(context: viewContext)
@@ -829,7 +845,10 @@ final class ViewModelSyncTests: XCTestCase {
         request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Portfolio.name, ascending: true)]
         let fetchedPortfolios = try viewContext.fetch(request)
-        let fetchedPortfolio = fetchedPortfolios.first!
+        guard let fetchedPortfolio = fetchedPortfolios.first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
         
         print("🔴 Step 4 - After simulating @FetchRequest re-fetch:")
         print("🔴   fetchedPortfolio.positions.count = \(fetchedPortfolio.positions?.count ?? -1)")
@@ -851,7 +870,10 @@ final class ViewModelSyncTests: XCTestCase {
         
         try viewContext.save()
         
-        let portfolioId = portfolio.id!
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
         
         // 2. 添加现金 position
         var cashPosition = Position(context: viewContext)
@@ -894,7 +916,10 @@ final class ViewModelSyncTests: XCTestCase {
         let request = Portfolio.fetchRequest()
         request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
         let fetchedPortfolios = try viewContext.fetch(request)
-        let refreshedPortfolio = fetchedPortfolios.first!
+        guard let refreshedPortfolio = fetchedPortfolios.first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
         
         print("🔴 After refreshAllObjects() and re-fetch:")
         print("🔴   refreshedPortfolio.positions.count = \(refreshedPortfolio.positions?.count ?? -1)")

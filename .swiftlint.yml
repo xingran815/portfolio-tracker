@@ -13,6 +13,10 @@ opt_in_rules:
   - sorted_first_last
   - unused_import
 
+force_unwrapping:
+  excluded:
+    - portfolio_trackerTests
+
 excluded:
   - DerivedData
   - build
@@ -34,10 +38,14 @@ function_body_length:
 type_body_length:
   warning: 300
   error: 500
+  excluded:
+    - portfolio_trackerTests/ViewModels/ViewModelSyncTests.swift
 
 file_length:
   warning: 500
   error: 1000
+  excluded:
+    - portfolio_trackerTests/ViewModels/ViewModelSyncTests.swift
 
 cyclomatic_complexity:
   warning: 10

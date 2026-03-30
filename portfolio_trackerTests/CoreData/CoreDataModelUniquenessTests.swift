@@ -77,10 +77,10 @@ final class CoreDataModelUniquenessTests: XCTestCase {
         portfolio.id = UUID()
         portfolio.name = "Test"
         
-        for i in 1...5 {
+        for index in 1...5 {
             let position = Position(context: viewContext)
             position.id = UUID()
-            position.symbol = "STOCK\(i)"
+            position.symbol = "STOCK\(index)"
             position.portfolio = portfolio
         }
         
@@ -104,12 +104,19 @@ final class CoreDataModelUniquenessTests: XCTestCase {
         try viewContext.save()
         
         let request = Portfolio.fetchRequest()
-        request.predicate = NSPredicate(format: "id == %@", portfolio.id! as CVarArg)
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
+        request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
         let fetched = try viewContext.fetch(request)
         
         XCTAssertEqual(fetched.count, 1, "Should fetch 1 portfolio")
         
-        let fetchedPortfolio = fetched.first!
+        guard let fetchedPortfolio = fetched.first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
         XCTAssertEqual(fetchedPortfolio.positions?.count, 1, "Fetched portfolio should have 1 position")
     }
     

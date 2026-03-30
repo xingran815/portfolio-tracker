@@ -38,8 +38,8 @@ struct PositionEntryRow: View {
                 .frame(width: 80)
                 
                 Picker("市场", selection: $market) {
-                    ForEach(Market.allCases, id: \.self) { m in
-                        Text(m.displayName).tag(m)
+                    ForEach(Market.allCases, id: \.self) { market in
+                        Text(market.displayName).tag(market)
                     }
                 }
                 .frame(width: 80)
@@ -128,13 +128,12 @@ struct TargetAllocationData {
     var percentage: String = ""
     
     var isValid: Bool {
-        !symbol.trimmingCharacters(in: .whitespaces).isEmpty &&
-        Double(percentage) != nil && Double(percentage)! > 0
+        guard let pct = Double(percentage), pct > 0 else { return false }
+        return !symbol.trimmingCharacters(in: .whitespaces).isEmpty
     }
     
     var allocation: (String, Double)? {
-        guard isValid else { return nil }
-        let pct = Double(percentage)!
+        guard isValid, let pct = Double(percentage) else { return nil }
         let decimal = pct > 1 ? pct / 100.0 : pct
         return (symbol.trimmingCharacters(in: .whitespaces).uppercased(), decimal)
     }
