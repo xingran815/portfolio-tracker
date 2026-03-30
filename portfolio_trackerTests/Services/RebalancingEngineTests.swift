@@ -30,54 +30,66 @@ final class DriftAnalyzerTests: XCTestCase {
     
     func testDriftOverweight() throws {
         // 30% current, 20% target = 10% drift (overweight)
+        // Need to include other assets to make allocation sum to 1.0
         let position = PositionData(symbol: "AAPL", currentValue: 3000)
+        let cashPosition = PositionData(symbol: "CASH", currentValue: 7000)
         let analysis = try analyzer.analyze(
-            positions: [position],
-            targetAllocation: ["AAPL": 0.20],
+            positions: [position, cashPosition],
+            targetAllocation: ["AAPL": 0.20, "CASH": 0.80],
             totalValue: 10000
         )
         
-        XCTAssertEqual(analysis.positions.count, 1)
-        XCTAssertEqual(analysis.positions[0].drift, 0.10, accuracy: 0.001)
-        XCTAssertTrue(analysis.positions[0].isOverweight)
-        XCTAssertFalse(analysis.positions[0].isUnderweight)
+        XCTAssertEqual(analysis.positions.count, 2)
+        let aaplDrift = analysis.positions.first { $0.symbol == "AAPL" }
+        XCTAssertNotNil(aaplDrift)
+        XCTAssertEqual(aaplDrift!.drift, 0.10, accuracy: 0.001)
+        XCTAssertTrue(aaplDrift!.isOverweight)
+        XCTAssertFalse(aaplDrift!.isUnderweight)
     }
     
     func testDriftUnderweight() throws {
         // 15% current, 25% target = -10% drift (underweight)
         let position = PositionData(symbol: "AAPL", currentValue: 1500)
+        let cashPosition = PositionData(symbol: "CASH", currentValue: 8500)
         let analysis = try analyzer.analyze(
-            positions: [position],
-            targetAllocation: ["AAPL": 0.25],
+            positions: [position, cashPosition],
+            targetAllocation: ["AAPL": 0.25, "CASH": 0.75],
             totalValue: 10000
         )
         
-        XCTAssertEqual(analysis.positions[0].drift, -0.10, accuracy: 0.001)
-        XCTAssertTrue(analysis.positions[0].isUnderweight)
-        XCTAssertFalse(analysis.positions[0].isOverweight)
+        let aaplDrift = analysis.positions.first { $0.symbol == "AAPL" }
+        XCTAssertNotNil(aaplDrift)
+        XCTAssertEqual(aaplDrift!.drift, -0.10, accuracy: 0.001)
+        XCTAssertTrue(aaplDrift!.isUnderweight)
+        XCTAssertFalse(aaplDrift!.isOverweight)
     }
     
     func testDriftOnTarget() throws {
         // 20% current, 20% target = 0% drift
         let position = PositionData(symbol: "AAPL", currentValue: 2000)
+        let cashPosition = PositionData(symbol: "CASH", currentValue: 8000)
         let analysis = try analyzer.analyze(
-            positions: [position],
-            targetAllocation: ["AAPL": 0.20],
+            positions: [position, cashPosition],
+            targetAllocation: ["AAPL": 0.20, "CASH": 0.80],
             totalValue: 10000
         )
         
-        XCTAssertEqual(analysis.positions[0].drift, 0.0, accuracy: 0.001)
-        XCTAssertFalse(analysis.positions[0].isOverweight)
-        XCTAssertFalse(analysis.positions[0].isUnderweight)
+        let aaplDrift = analysis.positions.first { $0.symbol == "AAPL" }
+        XCTAssertNotNil(aaplDrift)
+        XCTAssertEqual(aaplDrift!.drift, 0.0, accuracy: 0.001)
+        XCTAssertFalse(aaplDrift!.isOverweight)
+        XCTAssertFalse(aaplDrift!.isUnderweight)
     }
     
     // MARK: - Threshold Detection
     
     func testNeedsRebalancingWhenThresholdExceeded() throws {
-        let position = PositionData(symbol: "AAPL", currentValue: 3500) // 35% vs 20% target
+        // 35% current, 20% target = 15% drift (overweight)
+        let position = PositionData(symbol: "AAPL", currentValue: 3500)
+        let cashPosition = PositionData(symbol: "CASH", currentValue: 6500)
         let analysis = try analyzer.analyze(
-            positions: [position],
-            targetAllocation: ["AAPL": 0.20],
+            positions: [position, cashPosition],
+            targetAllocation: ["AAPL": 0.20, "CASH": 0.80],
             totalValue: 10000
         )
         
@@ -86,10 +98,12 @@ final class DriftAnalyzerTests: XCTestCase {
     }
     
     func testNoRebalancingWhenWithinThreshold() throws {
-        let position = PositionData(symbol: "AAPL", currentValue: 2200) // 22% vs 20% target
+        // 22% current, 20% target = 2% drift (within threshold)
+        let position = PositionData(symbol: "AAPL", currentValue: 2200)
+        let cashPosition = PositionData(symbol: "CASH", currentValue: 7800)
         let analysis = try analyzer.analyze(
-            positions: [position],
-            targetAllocation: ["AAPL": 0.20],
+            positions: [position, cashPosition],
+            targetAllocation: ["AAPL": 0.20, "CASH": 0.80],
             totalValue: 10000
         )
         
@@ -117,9 +131,13 @@ final class DriftAnalyzerTests: XCTestCase {
         let msftDrift = analysis.positions.first { $0.symbol == "MSFT" }
         let googlDrift = analysis.positions.first { $0.symbol == "GOOGL" }
         
-        XCTAssertEqual(aaplDrift?.drift, 0.10, accuracy: 0.001)
-        XCTAssertEqual(msftDrift?.drift, -0.10, accuracy: 0.001)
-        XCTAssertEqual(googlDrift?.drift, 0.0, accuracy: 0.001)
+        XCTAssertNotNil(aaplDrift)
+        XCTAssertNotNil(msftDrift)
+        XCTAssertNotNil(googlDrift)
+        
+        XCTAssertEqual(aaplDrift!.drift, 0.10, accuracy: 0.001)
+        XCTAssertEqual(msftDrift!.drift, -0.10, accuracy: 0.001)
+        XCTAssertEqual(googlDrift!.drift, 0.0, accuracy: 0.001)
     }
     
     // MARK: - Missing Positions
@@ -137,9 +155,9 @@ final class DriftAnalyzerTests: XCTestCase {
         
         let msftDrift = analysis.positions.first { $0.symbol == "MSFT" }
         XCTAssertNotNil(msftDrift)
-        XCTAssertEqual(msftDrift?.currentValue, 0)
-        XCTAssertEqual(msftDrift?.targetWeight, 0.50)
-        XCTAssertEqual(msftDrift?.drift, -0.50, accuracy: 0.001)
+        XCTAssertEqual(msftDrift!.currentValue, 0)
+        XCTAssertEqual(msftDrift!.targetWeight, 0.50)
+        XCTAssertEqual(msftDrift!.drift, -0.50, accuracy: 0.001)
     }
     
     // MARK: - Allocation Normalization
@@ -162,8 +180,9 @@ final class DriftAnalyzerTests: XCTestCase {
     // MARK: - Error Handling
     
     func testEmptyPositionsThrowsError() {
+        let emptyPositions: [PositionData] = []
         XCTAssertThrowsError(try analyzer.analyze(
-            positions: [],
+            positions: emptyPositions,
             targetAllocation: ["AAPL": 0.5],
             totalValue: 10000
         )) { error in
@@ -201,20 +220,28 @@ final class DriftAnalyzerTests: XCTestCase {
     // MARK: - Convenience Methods
     
     func testSignificantDriftsFiltering() throws {
+        // Total value = 10000, threshold = 5%
+        // AAPL: 45% current, 30% target = 15% drift (significant)
+        // MSFT: 21% current, 20% target = 1% drift (not significant)
+        // CASH: 34% current, 50% target = -16% drift (significant)
         let positions = [
-            PositionData(symbol: "AAPL", currentValue: 4500), // 45% vs 30% = 15% drift (significant)
-            PositionData(symbol: "MSFT", currentValue: 2100)  // 21% vs 20% = 1% drift (not significant)
+            PositionData(symbol: "AAPL", currentValue: 4500),
+            PositionData(symbol: "MSFT", currentValue: 2100),
+            PositionData(symbol: "CASH", currentValue: 3400)
         ]
         
         let analysis = try analyzer.analyze(
             positions: positions,
-            targetAllocation: ["AAPL": 0.30, "MSFT": 0.20],
+            targetAllocation: ["AAPL": 0.30, "MSFT": 0.20, "CASH": 0.50],
             totalValue: 10000
         )
         
         let significantDrifts = analysis.significantDrifts
-        XCTAssertEqual(significantDrifts.count, 1)
-        XCTAssertEqual(significantDrifts[0].symbol, "AAPL")
+        // AAPL has 15% drift (significant)
+        // CASH has -16% drift (significant)
+        // MSFT has 1% drift (not significant)
+        XCTAssertEqual(significantDrifts.count, 2)
+        XCTAssertTrue(significantDrifts.contains { $0.symbol == "AAPL" })
     }
 }
 
@@ -238,6 +265,8 @@ final class RebalancingEngineTests: XCTestCase {
     // MARK: - Plan Generation
     
     func testGeneratePlanWithDrift() async throws {
+        // Portfolio: 100% AAPL, target: 50% AAPL, 50% CASH
+        // Should suggest selling AAPL
         let snapshot = PortfolioSnapshot(
             id: UUID(),
             name: "Test Portfolio",
@@ -257,7 +286,7 @@ final class RebalancingEngineTests: XCTestCase {
                     lastUpdated: Date()
                 )
             ],
-            targetAllocation: ["AAPL": 0.50],
+            targetAllocation: ["AAPL": 0.50, "CASH": 0.50],  // AAPL is 100%, target 50%
             totalValue: 20000,
             rebalancingFrequency: .quarterly,
             lastRebalancedAt: nil
@@ -272,6 +301,7 @@ final class RebalancingEngineTests: XCTestCase {
     }
     
     func testNoRebalancingWhenNoSignificantDrift() async {
+        // Portfolio: 50% AAPL, target: 50% AAPL, 50% CASH (normalized to 50/50)
         let snapshot = PortfolioSnapshot(
             id: UUID(),
             name: "Test Portfolio",
@@ -289,10 +319,24 @@ final class RebalancingEngineTests: XCTestCase {
                     assetType: .stock,
                     market: .us,
                     lastUpdated: Date()
+                ),
+                PositionSnapshot(
+                    id: UUID(),
+                    symbol: "CASH",
+                    name: "Cash",
+                    shares: 10000,
+                    costBasis: 1,
+                    currentPrice: 1,
+                    currentValue: 10000,
+                    profitLoss: 0,
+                    profitLossPercentage: 0,
+                    assetType: .cash,
+                    market: .us,
+                    lastUpdated: Date()
                 )
             ],
-            targetAllocation: ["AAPL": 0.50], // 50% current matches 50% target
-            totalValue: 10000,
+            targetAllocation: ["AAPL": 0.50, "CASH": 0.50],
+            totalValue: 20000,
             rebalancingFrequency: .quarterly,
             lastRebalancedAt: nil
         )
@@ -413,22 +457,7 @@ struct PositionData: PositionProtocol {
 
 // MARK: - Error Equality Extensions
 
-extension DriftAnalysisError: Equatable {
-    public static func == (lhs: DriftAnalysisError, rhs: DriftAnalysisError) -> Bool {
-        switch (lhs, rhs) {
-        case (.noPositions, .noPositions),
-             (.invalidTargetAllocation, .invalidTargetAllocation),
-             (.totalValueZero, .totalValueZero),
-             (.totalValueNegative, .totalValueNegative),
-             (.allocationSumZero, .allocationSumZero):
-            return true
-        default:
-            return false
-        }
-    }
-}
-
-extension RebalancingError: Equatable {
+extension RebalancingError: @retroactive Equatable {
     public static func == (lhs: RebalancingError, rhs: RebalancingError) -> Bool {
         switch (lhs, rhs) {
         case (.noSignificantDrift, .noSignificantDrift):

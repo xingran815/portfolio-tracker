@@ -51,6 +51,8 @@ final class ChatViewModel {
     private var currentAssistantMessageId: UUID?
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "ChatViewModel")
     
+    nonisolated deinit {}
+    
     /// Whether the service is using real API or mock
     var isUsingRealAPI: Bool {
         !(llmService is MockLLMService)

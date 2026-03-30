@@ -7,6 +7,10 @@
 
 import SwiftUI
 
+extension Notification.Name {
+    static let portfolioDataDidChange = Notification.Name("portfolioDataDidChange")
+}
+
 enum PositionManagementMode {
     case add
     case buyMore
@@ -491,12 +495,14 @@ struct PositionManagementSheet: View {
                     await viewModel.updatePriceForSymbol(trimmedSymbol)
                     await MainActor.run {
                         viewModel.refreshData()
+                        NotificationCenter.default.post(name: .portfolioDataDidChange, object: nil)
                         isUpdatingPrice = false
                         dismiss()
                     }
                 }
             } else {
                 viewModel.refreshData()
+                NotificationCenter.default.post(name: .portfolioDataDidChange, object: nil)
                 dismiss()
             }
         } catch {
