@@ -386,11 +386,14 @@ final class RebalancingEngineTests: XCTestCase {
         )
         
         let calendar = Calendar.current
-        let expectedDate = calendar.date(byAdding: .month, value: 1, to: baseDate)
+        guard let expectedDate = calendar.date(byAdding: .month, value: 1, to: baseDate) else {
+            XCTFail("Failed to create expected date")
+            return
+        }
         
         XCTAssertEqual(
             calendar.startOfDay(for: nextDate),
-            calendar.startOfDay(for: expectedDate!)
+            calendar.startOfDay(for: expectedDate)
         )
     }
     
@@ -402,16 +405,22 @@ final class RebalancingEngineTests: XCTestCase {
         )
         
         let calendar = Calendar.current
-        let expectedDate = calendar.date(byAdding: .month, value: 3, to: baseDate)
+        guard let expectedDate = calendar.date(byAdding: .month, value: 3, to: baseDate) else {
+            XCTFail("Failed to create expected date")
+            return
+        }
         
         XCTAssertEqual(
             calendar.startOfDay(for: nextDate),
-            calendar.startOfDay(for: expectedDate!)
+            calendar.startOfDay(for: expectedDate)
         )
     }
     
     func testIsRebalancingOverdue() async {
-        let twoMonthsAgo = Calendar.current.date(byAdding: .month, value: -2, to: Date())!
+        guard let twoMonthsAgo = Calendar.current.date(byAdding: .month, value: -2, to: Date()) else {
+            XCTFail("Failed to create two months ago date")
+            return
+        }
         
         let isOverdue = await engine.isRebalancingOverdue(
             lastRebalanceDate: twoMonthsAgo,
@@ -422,7 +431,10 @@ final class RebalancingEngineTests: XCTestCase {
     }
     
     func testIsNotRebalancingOverdue() async {
-        let oneWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+        guard let oneWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) else {
+            XCTFail("Failed to create one week ago date")
+            return
+        }
         
         let isOverdue = await engine.isRebalancingOverdue(
             lastRebalanceDate: oneWeekAgo,

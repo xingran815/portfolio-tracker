@@ -199,16 +199,16 @@ struct PositionManagementSheet: View {
             
             if assetType != .cash {
                 Picker("市场", selection: $market) {
-                    ForEach(Market.allCases, id: \.self) { m in
-                        Text(m.displayName).tag(m)
+                    ForEach(Market.allCases, id: \.self) { market in
+                        Text(market.displayName).tag(market)
                     }
                 }
                 .disabled(mode == .buyMore || mode == .sell)
             }
             
             Picker("币种", selection: $currency) {
-                ForEach(Currency.allCases, id: \.self) { c in
-                    Text(c.displayName).tag(c)
+                ForEach(Currency.allCases, id: \.self) { currency in
+                    Text(currency.displayName).tag(currency)
                 }
             }
             .disabled(mode == .buyMore || mode == .sell)

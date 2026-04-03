@@ -209,12 +209,19 @@ final class ComputedPropertyUpdateTests: XCTestCase {
         portfolio.id = UUID()
         portfolio.name = "Test"
         
-        let positions: [(symbol: String, shares: Double, cost: Double, price: Double)] = [
-            ("AAPL", 100, 150.0, 200.0),
-            ("MSFT", 50, 300.0, 350.0),
-            ("GOOGL", 20, 2500.0, 2800.0),
-            ("AMZN", 30, 3000.0, 3200.0),
-            ("TSLA", 40, 800.0, 900.0)
+        struct TestPositionData {
+            let symbol: String
+            let shares: Double
+            let cost: Double
+            let price: Double
+        }
+        
+        let positions: [TestPositionData] = [
+            TestPositionData(symbol: "AAPL", shares: 100, cost: 150.0, price: 200.0),
+            TestPositionData(symbol: "MSFT", shares: 50, cost: 300.0, price: 350.0),
+            TestPositionData(symbol: "GOOGL", shares: 20, cost: 2500.0, price: 2800.0),
+            TestPositionData(symbol: "AMZN", shares: 30, cost: 3000.0, price: 3200.0),
+            TestPositionData(symbol: "TSLA", shares: 40, cost: 800.0, price: 900.0)
         ]
         
         for pos in positions {

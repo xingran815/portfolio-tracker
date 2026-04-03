@@ -83,12 +83,19 @@ final class CoreDataRelationshipTests: XCTestCase {
         try viewContext.save()
         
         let request = Portfolio.fetchRequest()
-        request.predicate = NSPredicate(format: "id == %@", portfolio.id! as CVarArg)
+        guard let portfolioId = portfolio.id else {
+            XCTFail("Portfolio ID should not be nil")
+            return
+        }
+        request.predicate = NSPredicate(format: "id == %@", portfolioId as CVarArg)
         
         let fetchedPortfolios = try viewContext.fetch(request)
         XCTAssertEqual(fetchedPortfolios.count, 1, "should fetch 1 portfolio")
         
-        let fetchedPortfolio = fetchedPortfolios.first!
+        guard let fetchedPortfolio = fetchedPortfolios.first else {
+            XCTFail("Should have fetched a portfolio")
+            return
+        }
         XCTAssertEqual(fetchedPortfolio.positions?.count, 1, "fetched portfolio should have 1 position")
     }
     
@@ -97,10 +104,10 @@ final class CoreDataRelationshipTests: XCTestCase {
         portfolio.id = UUID()
         portfolio.name = "Test Portfolio"
         
-        for i in 1...5 {
+        for index in 1...5 {
             let position = Position(context: viewContext)
             position.id = UUID()
-            position.symbol = "STOCK\(i)"
+            position.symbol = "STOCK\(index)"
             position.portfolio = portfolio
         }
         

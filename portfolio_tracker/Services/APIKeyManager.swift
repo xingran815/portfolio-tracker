@@ -27,6 +27,10 @@ enum APIService: String, CaseIterable, Sendable {
         case .kimi: return "https://platform.moonshot.cn/docs/api-keys"
         }
     }
+    
+    var documentationURLValue: URL? {
+        URL(string: documentationURL)
+    }
 }
 
 /// Errors that can occur during keychain operations
