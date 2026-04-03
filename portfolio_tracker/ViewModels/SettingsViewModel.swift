@@ -21,17 +21,32 @@ final class SettingsViewModel {
     /// Kimi API key input
     var kimiKeyInput = ""
     
+    /// Baidu Qianfan API key input
+    var baiduqianfanKeyInput = ""
+    
     /// Whether Alpha Vantage key is configured
     var isAlphaVantageConfigured = false
     
     /// Whether Kimi API key is configured
     var isKimiConfigured = false
     
+    /// Whether Baidu Qianfan API key is configured
+    var isBaiduqianfanConfigured = false
+    
     /// Validation status for Alpha Vantage
     var alphaVantageStatus: ValidationStatus = .unknown
     
     /// Validation status for Kimi
     var kimiStatus: ValidationStatus = .unknown
+    
+    /// Validation status for Baidu Qianfan
+    var baiduqianfanStatus: ValidationStatus = .unknown
+    
+    /// Selected LLM provider
+    var selectedProvider: LLMProvider = .baiduqianfan
+    
+    /// Selected Baidu Qianfan model
+    var selectedBaiduModel: BaiduQianfanService.Model = .kimi_k2_5
     
     /// Whether validation is in progress
     var isValidating = false
@@ -93,11 +108,17 @@ final class SettingsViewModel {
     func loadAPIKeyStatus() async {
         isAlphaVantageConfigured = await apiKeyManager.hasKey(for: .alphaVantage)
         isKimiConfigured = await apiKeyManager.hasKey(for: .kimi)
+        isBaiduqianfanConfigured = await apiKeyManager.hasKey(for: .baiduqianfan)
         
         alphaVantageStatus = isAlphaVantageConfigured ? .valid : .unknown
         kimiStatus = isKimiConfigured ? .valid : .unknown
+        baiduqianfanStatus = isBaiduqianfanConfigured ? .valid : .unknown
         
-        logger.info("API key status loaded - AlphaVantage: \(self.isAlphaVantageConfigured), Kimi: \(self.isKimiConfigured)")
+        // Load provider preference
+        selectedProvider = LLMServiceFactory.shared.getProvider()
+        selectedBaiduModel = LLMServiceFactory.shared.getBaiduQianfanModel()
+        
+        logger.info("API key status loaded - AlphaVantage: \(self.isAlphaVantageConfigured), Kimi: \(self.isKimiConfigured), Baidu Qianfan: \(self.isBaiduqianfanConfigured)")
     }
     
     /// Saves Alpha Vantage API key
@@ -285,6 +306,100 @@ final class SettingsViewModel {
                 case .serviceUnavailable:
                     kimiStatus = .invalid("Service unavailable")
                     showError(message: "Kimi service is temporarily unavailable")
+                }
+            }
+        }
+    }
+    
+    /// Saves Baidu Qianfan API key to keychain
+    func saveBaiduqianfanKey() {
+        let key = baiduqianfanKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !key.isEmpty else {
+            showError(message: "Please enter a valid API key")
+            return
+        }
+        
+        guard APIKeyManager.shared.isValidKeyFormat(key, for: .baiduqianfan) else {
+            showError(message: "Invalid API key format. Baidu Qianfan keys should start with 'bce-'")
+            return
+        }
+        
+        Task {
+            do {
+                try await APIKeyManager.shared.saveKey(key, for: .baiduqianfan)
+                
+                await MainActor.run {
+                    isBaiduqianfanConfigured = true
+                    baiduqianfanStatus = .valid
+                    baiduqianfanKeyInput = ""
+                    showSuccess(message: "Baidu Qianfan API key saved successfully!")
+                }
+            } catch {
+                await MainActor.run {
+                    showError(message: "Failed to save API key: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    /// Deletes Baidu Qianfan API key from keychain
+    func deleteBaiduqianfanKey() {
+        Task {
+            do {
+                try await APIKeyManager.shared.deleteKey(for: .baiduqianfan)
+                
+                await MainActor.run {
+                    isBaiduqianfanConfigured = false
+                    baiduqianfanStatus = .unknown
+                    showSuccess(message: "Baidu Qianfan API key removed")
+                }
+            } catch {
+                await MainActor.run {
+                    showError(message: "Failed to remove API key: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    /// Validates Baidu Qianfan API key by making a test request
+    func validateBaiduqianfanKey() {
+        guard isBaiduqianfanConfigured else {
+            showError(message: "No Baidu Qianfan API key configured")
+            return
+        }
+        
+        baiduqianfanStatus = .validating
+        isValidating = true
+        
+        Task {
+            let apiKeyManager = APIKeyManager.shared
+            let baiduService = BaiduQianfanService(apiKeyManager: apiKeyManager, model: selectedBaiduModel)
+            
+            let result = await baiduService.validateAPIKey()
+            
+            await MainActor.run {
+                isValidating = false
+                
+                switch result {
+                case .valid:
+                    baiduqianfanStatus = .valid
+                    showSuccess(message: "Baidu Qianfan API key is valid and working!")
+                case .notConfigured:
+                    baiduqianfanStatus = .invalid("API key not found")
+                    showError(message: "API key not found in keychain")
+                case .invalid:
+                    baiduqianfanStatus = .invalid("Invalid API key")
+                    showError(message: "Invalid API key. Please check your Baidu Qianfan API key.")
+                case .networkError(let message):
+                    baiduqianfanStatus = .invalid("Network error")
+                    showError(message: "Network error: \(message)")
+                case .rateLimited:
+                    baiduqianfanStatus = .invalid("Rate limited")
+                    showError(message: "Rate limit exceeded. Please try again later.")
+                case .serviceUnavailable:
+                    baiduqianfanStatus = .invalid("Service unavailable")
+                    showError(message: "Baidu Qianfan service is temporarily unavailable")
                 }
             }
         }
