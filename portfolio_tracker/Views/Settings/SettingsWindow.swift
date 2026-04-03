@@ -207,7 +207,7 @@ struct SettingsWindow: View {
         }
     }
     
-    private var kimiSection: some View {
+    private var llmSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 16) {
                 // Header
@@ -217,74 +217,162 @@ struct SettingsWindow: View {
                         .foregroundStyle(.purple)
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Kimi API")
-                            .font(.headline)
                         Text("AI 投资助手")
+                            .font(.headline)
+                        Text("LLM Provider for chat")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     
                     Spacer()
-                    
-                    StatusIndicator(status: viewModel.kimiStatus)
                 }
                 
-                // Status
-                HStack {
-                    Text("状态:")
+                // Provider Selection
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("LLM Provider:")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                     
-                    if viewModel.isKimiConfigured {
-                        Label("已配置", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Label("未配置（可选）", systemImage: "minus.circle.fill")
-                            .foregroundStyle(.orange)
+                    Picker("Provider", selection: $viewModel.selectedProvider) {
+                        Text("Baidu Qianfan").tag(LLMProvider.baiduqianfan)
+                        Text("Kimi").tag(LLMProvider.kimi)
                     }
-                    
-                    Spacer()
-                    
-                    if let url = APIService.kimi.documentationURLValue {
-                        Link(destination: url) {
-                            Text("获取 API Key →")
-                                .font(.caption)
+                    .pickerStyle(.radioGroup)
+                    .onChange(of: viewModel.selectedProvider) { _, newValue in
+                        Task {
+                            await LLMServiceFactory.shared.setProvider(newValue)
                         }
                     }
                 }
                 
-                // Input field
-                if !viewModel.isKimiConfigured {
+                // Model Selection (only for Baidu Qianfan)
+                if viewModel.selectedProvider == .baiduqianfan {
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField("输入 API Key (sk-...)", text: $viewModel.kimiKeyInput)
-                            .textFieldStyle(.roundedBorder)
+                        Text("Model:")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                         
+                        Picker("Model", selection: $viewModel.selectedBaiduModel) {
+                            ForEach(BaiduQianfanService.Model.allCases, id: \.self) { model in
+                                Text(model.displayName).tag(model)
+                            }
+                        }
+                        .onChange(of: viewModel.selectedBaiduModel) { _, newValue in
+                            Task {
+                                await LLMServiceFactory.shared.setBaiduQianfanModel(newValue)
+                            }
+                        }
+                    }
+                }
+                
+                Divider()
+                
+                // API Key Section (conditional based on provider)
+                if viewModel.selectedProvider == .kimi {
+                    // Kimi API Key
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("您的 API Key 将安全存储在 macOS 钥匙串中")
-                                .font(.caption)
+                            Text("Kimi API Key:")
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
                             
                             Spacer()
                             
-                            Button("保存") {
-                                viewModel.saveKimiKey()
+                            if let url = APIService.kimi.documentationURLValue {
+                                Link(destination: url) {
+                                    Text("获取 API Key →")
+                                        .font(.caption)
+                                }
                             }
-                            .disabled(viewModel.kimiKeyInput.isEmpty)
+                        }
+                        
+                        if !viewModel.isKimiConfigured {
+                            TextField("输入 API Key (sk-...)", text: $viewModel.kimiKeyInput)
+                                .textFieldStyle(.roundedBorder)
+                            
+                            HStack {
+                                Text("您的 API Key 将安全存储在 macOS 钥匙串中")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                
+                                Spacer()
+                                
+                                Button("保存") {
+                                    viewModel.saveKimiKey()
+                                }
+                                .disabled(viewModel.kimiKeyInput.isEmpty)
+                            }
+                        } else {
+                            HStack {
+                                Label("已配置", systemImage: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                
+                                Spacer()
+                                
+                                Button("验证") {
+                                    viewModel.validateKimiKey()
+                                }
+                                .disabled(viewModel.isValidating)
+                                
+                                Button("删除") {
+                                    viewModel.deleteKimiKey()
+                                }
+                                .foregroundStyle(.red)
+                            }
                         }
                     }
                 } else {
-                    // Actions for configured state
-                    HStack {
-                        Button("验证") {
-                            viewModel.validateKimiKey()
+                    // Baidu Qianfan API Key
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Baidu Qianfan API Key:")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            
+                            Spacer()
+                            
+                            if let url = APIService.baiduqianfan.documentationURLValue {
+                                Link(destination: url) {
+                                    Text("获取 API Key →")
+                                        .font(.caption)
+                                }
+                            }
                         }
-                        .disabled(viewModel.isValidating)
                         
-                        Button("删除") {
-                            viewModel.deleteKimiKey()
+                        if !viewModel.isBaiduqianfanConfigured {
+                            TextField("输入 API Key (bce-...)", text: $viewModel.baiduqianfanKeyInput)
+                                .textFieldStyle(.roundedBorder)
+                            
+                            HStack {
+                                Text("您的 API Key 将安全存储在 macOS 钥匙串中")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                
+                                Spacer()
+                                
+                                Button("保存") {
+                                    viewModel.saveBaiduqianfanKey()
+                                }
+                                .disabled(viewModel.baiduqianfanKeyInput.isEmpty)
+                            }
+                        } else {
+                            HStack {
+                                Label("已配置", systemImage: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                
+                                Spacer()
+                                
+                                Button("验证") {
+                                    viewModel.validateBaiduqianfanKey()
+                                }
+                                .disabled(viewModel.isValidating)
+                                
+                                Button("删除") {
+                                    viewModel.deleteBaiduqianfanKey()
+                                }
+                                .foregroundStyle(.red)
+                            }
                         }
-                        .foregroundStyle(.red)
-                        
-                        Spacer()
                     }
                 }
             }
@@ -292,6 +380,10 @@ struct SettingsWindow: View {
             .background(Color(nsColor: .controlBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
+    }
+    
+    private var kimiSection: some View {
+        llmSection
     }
     
     // MARK: - About Settings

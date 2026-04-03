@@ -13,11 +13,13 @@ import os.log
 enum APIService: String, CaseIterable, Sendable {
     case alphaVantage = "com.portfolio_tracker.alphavantage"
     case kimi = "com.portfolio_tracker.kimi"
+    case baiduqianfan = "com.portfolio_tracker.baiduqianfan"
     
     var displayName: String {
         switch self {
         case .alphaVantage: return "Alpha Vantage"
         case .kimi: return "Kimi API"
+        case .baiduqianfan: return "Baidu Qianfan"
         }
     }
     
@@ -25,6 +27,7 @@ enum APIService: String, CaseIterable, Sendable {
         switch self {
         case .alphaVantage: return "https://www.alphavantage.co/support/#api-key"
         case .kimi: return "https://platform.moonshot.cn/docs/api-keys"
+        case .baiduqianfan: return "https://console.bce.baidu.com/qianfan/resource/subscribe"
         }
     }
     
@@ -209,6 +212,8 @@ actor APIKeyManager {
             return key.count >= 10 && !key.contains(" ")
         case .kimi:
             return key.hasPrefix("sk-") && key.count > 20
+        case .baiduqianfan:
+            return key.hasPrefix("bce-") && key.count > 20
         }
     }
 }

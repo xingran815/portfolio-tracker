@@ -51,7 +51,9 @@ final class ChatViewModel {
     private var currentAssistantMessageId: UUID?
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "ChatViewModel")
     
-    nonisolated deinit {}
+    nonisolated deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
     
     /// Whether the service is using real API or mock
     var isUsingRealAPI: Bool {
@@ -69,10 +71,44 @@ final class ChatViewModel {
         loadChatHistory()
         addWelcomeMessageIfNeeded()
         
+        // Listen for LLM configuration changes
+        setupLLMChangeObservers()
+        
         // Check for real API key and switch if available
         Task {
             await autoSwitchToRealServiceIfAvailable()
         }
+    }
+    
+    /// Sets up notification observers for LLM configuration changes
+    private func setupLLMChangeObservers() {
+        // Listen for model changes
+        NotificationCenter.default.addObserver(
+            forName: .llmModelDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { [weak self] in
+                await self?.handleLLMConfigurationChange()
+            }
+        }
+        
+        // Listen for provider changes
+        NotificationCenter.default.addObserver(
+            forName: .llmProviderDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { [weak self] in
+                await self?.handleLLMConfigurationChange()
+            }
+        }
+    }
+    
+    /// Handles LLM model or provider changes by refreshing the service
+    private func handleLLMConfigurationChange() async {
+        llmService = await LLMServiceFactory.shared.refreshService()
+        logger.info("Refreshed LLM service due to configuration change")
     }
     
     // MARK: - Public Methods
@@ -169,26 +205,47 @@ final class ChatViewModel {
         await llmService.validateAPIKey()
     }
     
-    /// Automatically switches to real Kimi API service if API key is available
+    /// Automatically switches to real LLM service if API key is available
     /// Called during initialization
     private func autoSwitchToRealServiceIfAvailable() async {
-        let apiKeyManager = APIKeyManager.shared
-        if await apiKeyManager.hasKey(for: .kimi) {
-            llmService = KimiService(apiKeyManager: apiKeyManager)
-            logger.info("Auto-switched to real Kimi API service on initialization")
-        }
+        llmService = await LLMServiceFactory.shared.getService()
+        logger.info("Auto-switched to LLM service based on provider preference")
     }
     
-    /// Switches to real Kimi API service if API key is available
+    /// Switches to a different LLM provider
+    /// - Parameter provider: The provider to switch to
+    func switchProvider(_ provider: LLMProvider) async {
+        await LLMServiceFactory.shared.setProvider(provider)
+        llmService = await LLMServiceFactory.shared.getService()
+        logger.info("Switched to \(provider.rawValue) provider")
+    }
+    
+    /// Switches Baidu Qianfan model
+    /// - Parameter model: The model to use
+    func switchBaiduModel(_ model: BaiduQianfanService.Model) async {
+        await LLMServiceFactory.shared.setBaiduQianfanModel(model)
+        llmService = await LLMServiceFactory.shared.refreshService()
+        logger.info("Switched to Baidu Qianfan model: \(model.rawValue)")
+    }
+    
+    /// Gets the current LLM provider
+    /// - Returns: The current provider
+    func getCurrentProvider() async -> LLMProvider {
+        await LLMServiceFactory.shared.getProvider()
+    }
+    
+    /// Gets the selected Baidu Qianfan model
+    /// - Returns: The selected model
+    func getBaiduModel() async -> BaiduQianfanService.Model {
+        await LLMServiceFactory.shared.getBaiduQianfanModel()
+    }
+    
+    /// Switches to real LLM service if API key is available
     /// Call this when API key is added in settings
     func switchToRealService() async {
         guard !isUsingRealAPI else { return }
-        
-        let apiKeyManager = APIKeyManager.shared
-        if await apiKeyManager.hasKey(for: .kimi) {
-            llmService = KimiService(apiKeyManager: apiKeyManager)
-            logger.info("Switched to real Kimi API service")
-        }
+        llmService = await LLMServiceFactory.shared.refreshService()
+        logger.info("Refreshed LLM service")
     }
     
     /// Switches back to mock service (for testing)
@@ -212,11 +269,19 @@ final class ChatViewModel {
     
     private func streamResponse(to message: String) async {
         // Build context from portfolio
-        let context = includePortfolioContext ? buildContext() : ConversationContext(
+        let context = includePortfolioContext ? await buildContext() : ConversationContext(
             portfolioName: nil,
             positions: [],
             riskProfile: nil,
-            targetAllocation: nil
+            targetAllocation: nil,
+            totalValue: nil,
+            totalCost: nil,
+            totalProfitLoss: nil,
+            profitLossPercentage: nil,
+            portfolioCurrency: nil,
+            expectedReturn: nil,
+            maxDrawdown: nil,
+            exchangeRates: nil
         )
         
         // Create assistant message placeholder with unique ID
@@ -313,41 +378,78 @@ final class ChatViewModel {
         messages.append(welcomeMessage)
     }
     
-    private func buildContext() -> ConversationContext {
-        // Prefer CoreData object if available for full context
-        if let portfolio = portfolio {
-            let positionSet = portfolio.positions as? Set<Position> ?? []
-            let positions = positionSet.map { position -> ConversationContext.PositionSummary in
-                ConversationContext.PositionSummary(
-                    symbol: position.symbol ?? "Unknown",
-                    shares: position.shares,
-                    currentValue: position.currentPrice * position.shares
-                )
-            }
-            
-            return ConversationContext(
-                portfolioName: portfolio.name,
-                positions: positions,
-                riskProfile: portfolio.riskProfile.displayName,
-                targetAllocation: portfolio.targetAllocation
-            )
-        }
-        
-        // Fallback to view data
-        guard let portfolioData = portfolioData else {
+    private func buildContext() async -> ConversationContext {
+        guard let portfolio = portfolio else {
             return ConversationContext(
                 portfolioName: nil,
                 positions: [],
                 riskProfile: nil,
-                targetAllocation: nil
+                targetAllocation: nil,
+                totalValue: nil,
+                totalCost: nil,
+                totalProfitLoss: nil,
+                profitLossPercentage: nil,
+                portfolioCurrency: nil,
+                expectedReturn: nil,
+                maxDrawdown: nil,
+                exchangeRates: nil
             )
         }
         
+        let baseCurrency = portfolio.currency
+        var exchangeRates: [String: Double]?
+        
+        do {
+            exchangeRates = try await ExchangeRateProvider.shared.fetchRates(base: baseCurrency.code)
+        } catch {
+            logger.warning("Failed to fetch exchange rates: \(error)")
+        }
+        
+        let positionSet = portfolio.positions as? Set<Position> ?? []
+        let positions = positionSet.map { position -> ConversationContext.PositionSummary in
+            let value = position.currentValue ?? 0
+            let weight = portfolio.totalValue > 0 ? value / portfolio.totalValue : nil
+            
+            return ConversationContext.PositionSummary(
+                symbol: position.symbol ?? "Unknown",
+                name: position.name ?? "",
+                shares: position.shares,
+                currentPrice: position.currentPrice,
+                currentValue: value,
+                totalCost: position.totalCost,
+                profitLoss: position.profitLoss,
+                profitLossPercentage: position.profitLossPercentage,
+                weight: weight,
+                assetType: position.assetType.rawValue,
+                market: position.market.rawValue,
+                currency: position.currencyEnum.rawValue
+            )
+        }
+        
+        let totalValue: Double
+        let totalCost: Double
+        
+        if let rates = exchangeRates {
+            totalValue = portfolio.totalValueIn(currency: baseCurrency, rates: rates, positions: Array(positionSet))
+            totalCost = portfolio.totalCostIn(currency: baseCurrency, rates: rates, positions: Array(positionSet))
+        } else {
+            totalValue = portfolio.totalValue
+            totalCost = portfolio.totalCost
+        }
+        
         return ConversationContext(
-            portfolioName: portfolioData.name,
-            positions: [], // View data doesn't include individual positions
-            riskProfile: portfolioData.riskProfile.displayName,
-            targetAllocation: portfolioData.targetAllocation
+            portfolioName: portfolio.name,
+            positions: positions,
+            riskProfile: portfolio.riskProfile.displayName,
+            targetAllocation: portfolio.targetAllocation,
+            totalValue: totalValue,
+            totalCost: totalCost,
+            totalProfitLoss: totalValue - totalCost,
+            profitLossPercentage: totalCost > 0 ? (totalValue - totalCost) / totalCost : nil,
+            portfolioCurrency: baseCurrency.rawValue,
+            expectedReturn: portfolio.expectedReturn > 0 ? portfolio.expectedReturn : nil,
+            maxDrawdown: portfolio.maxDrawdown > 0 ? portfolio.maxDrawdown : nil,
+            exchangeRates: exchangeRates
         )
     }
 }
