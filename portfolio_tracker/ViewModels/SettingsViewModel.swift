@@ -320,22 +320,20 @@ final class SettingsViewModel {
             return
         }
         
-        let isValidFormat = await APIKeyManager.shared.isValidKeyFormat(key, for: .baiduqianfan)
-        guard isValidFormat else {
-            showError(message: "Invalid API key format. Baidu Qianfan keys should start with 'bce-'")
-            return
-        }
-        
         Task {
-            do {
-                try await APIKeyManager.shared.saveKey(key, for: .baiduqianfan)
-                
+            guard await apiKeyManager.isValidKeyFormat(key, for: .baiduqianfan) else {
                 await MainActor.run {
-                    isBaiduqianfanConfigured = true
-                    baiduqianfanStatus = .valid
-                    baiduqianfanKeyInput = ""
-                    showSuccess(message: "Baidu Qianfan API key saved successfully!")
+                    showError(message: "Invalid API key format. Baidu Qianfan keys should start with 'bce-'")
                 }
+                return
+            }
+            
+            do {
+                try await apiKeyManager.saveKey(key, for: .baiduqianfan)
+                isBaiduqianfanConfigured = true
+                baiduqianfanStatus = .valid
+                baiduqianfanKeyInput = ""
+                showSuccess(message: "Baidu Qianfan API key saved successfully!")
             } catch {
                 await MainActor.run {
                     showError(message: "Failed to save API key: \(error.localizedDescription)")

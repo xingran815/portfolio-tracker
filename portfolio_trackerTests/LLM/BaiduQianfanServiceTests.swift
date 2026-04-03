@@ -295,7 +295,7 @@ final class BaiduQianfanServiceTests: XCTestCase {
         XCTAssertTrue(contextString.contains("AAPL"))
         XCTAssertTrue(contextString.contains("MSFT"))
         XCTAssertTrue(contextString.contains("moderate"))
-        XCTAssertTrue(contextString.contains("60%"))
+        XCTAssertTrue(contextString.contains("60.0%"))
         
         print("✅ Context string:\n\(contextString)")
     }
@@ -310,10 +310,13 @@ final class BaiduQianfanServiceTests: XCTestCase {
         
         let contextString = SystemPrompts.buildContextString(context: context)
         
-        // Should still contain base prompt
-        XCTAssertTrue(contextString.contains("investment advisor"))
-        XCTAssertFalse(contextString.contains("Portfolio:"))
+        // Empty context should return empty string (no portfolio data)
+        // The base prompt is separate and handled by the service
+        XCTAssertTrue(contextString.isEmpty || !contextString.contains("Portfolio:"))
         
-        print("✅ Empty context string:\n\(contextString)")
+        // Verify base prompt is separate
+        XCTAssertTrue(SystemPrompts.basePrompt.contains("investment advisor"))
+        
+        print("✅ Empty context string: '\(contextString)'")
     }
 }
