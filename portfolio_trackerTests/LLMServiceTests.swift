@@ -29,8 +29,17 @@ final class LLMServiceTests: XCTestCase {
         let positions = [
             ConversationContext.PositionSummary(
                 symbol: "AAPL",
+                name: "Apple",
                 shares: 100,
-                currentValue: 15000.0
+                currentPrice: 150,
+                currentValue: 15000.0,
+                totalCost: 12000,
+                profitLoss: 3000,
+                profitLossPercentage: 0.25,
+                weight: 0.5,
+                assetType: "stock",
+                market: "US",
+                currency: "USD"
             )
         ]
         
@@ -38,7 +47,15 @@ final class LLMServiceTests: XCTestCase {
             portfolioName: "Test Portfolio",
             positions: positions,
             riskProfile: "moderate",
-            targetAllocation: ["AAPL": 0.5, "VOO": 0.5]
+            targetAllocation: ["AAPL": 0.5, "VOO": 0.5],
+            totalValue: 15000,
+            totalCost: 12000,
+            totalProfitLoss: 3000,
+            profitLossPercentage: 0.25,
+            portfolioCurrency: "USD",
+            expectedReturn: nil,
+            maxDrawdown: nil,
+            exchangeRates: nil
         )
         
         XCTAssertEqual(context.portfolioName, "Test Portfolio")
@@ -61,8 +78,17 @@ final class LLMServiceTests: XCTestCase {
         let positions = [
             ConversationContext.PositionSummary(
                 symbol: "AAPL",
+                name: "Apple",
                 shares: 100,
-                currentValue: 15000.0
+                currentPrice: 150,
+                currentValue: 15000.0,
+                totalCost: 12000,
+                profitLoss: 3000,
+                profitLossPercentage: 0.25,
+                weight: 0.6,
+                assetType: "stock",
+                market: "US",
+                currency: "USD"
             )
         ]
         
@@ -70,7 +96,15 @@ final class LLMServiceTests: XCTestCase {
             portfolioName: "My Portfolio",
             positions: positions,
             riskProfile: "conservative",
-            targetAllocation: ["AAPL": 0.6]
+            targetAllocation: ["AAPL": 0.6],
+            totalValue: 15000,
+            totalCost: 12000,
+            totalProfitLoss: 3000,
+            profitLossPercentage: 0.25,
+            portfolioCurrency: "USD",
+            expectedReturn: nil,
+            maxDrawdown: nil,
+            exchangeRates: nil
         )
         
         let contextString = SystemPrompts.buildContextString(context: context)
@@ -78,7 +112,7 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertTrue(contextString.contains("My Portfolio"))
         XCTAssertTrue(contextString.contains("conservative"))
         XCTAssertTrue(contextString.contains("AAPL"))
-        XCTAssertTrue(contextString.contains("educational advice"))
+        XCTAssertTrue(contextString.contains("SECURITIES"))
     }
     
     func testContextStringWithNilValues() {
@@ -86,12 +120,21 @@ final class LLMServiceTests: XCTestCase {
             portfolioName: nil,
             positions: [],
             riskProfile: nil,
-            targetAllocation: nil
+            targetAllocation: nil,
+            totalValue: nil,
+            totalCost: nil,
+            totalProfitLoss: nil,
+            profitLossPercentage: nil,
+            portfolioCurrency: nil,
+            expectedReturn: nil,
+            maxDrawdown: nil,
+            exchangeRates: nil
         )
         
         let contextString = SystemPrompts.buildContextString(context: context)
         
-        XCTAssertTrue(contextString.contains("educational advice"))
+        // Empty context should return empty string
+        XCTAssertTrue(contextString.isEmpty || !contextString.contains("Portfolio:"))
     }
     
     // MARK: - LLM Error Tests

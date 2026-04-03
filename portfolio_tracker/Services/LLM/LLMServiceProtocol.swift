@@ -36,10 +36,28 @@ struct ConversationContext: Sendable {
     let riskProfile: String?
     let targetAllocation: [String: Double]?
     
+    let totalValue: Double?
+    let totalCost: Double?
+    let totalProfitLoss: Double?
+    let profitLossPercentage: Double?
+    let portfolioCurrency: String?
+    let expectedReturn: Double?
+    let maxDrawdown: Double?
+    let exchangeRates: [String: Double]?
+    
     struct PositionSummary: Sendable {
         let symbol: String
+        let name: String
         let shares: Double
+        let currentPrice: Double
         let currentValue: Double
+        let totalCost: Double
+        let profitLoss: Double?
+        let profitLossPercentage: Double?
+        let weight: Double?
+        let assetType: String
+        let market: String
+        let currency: String
     }
 }
 
@@ -175,30 +193,130 @@ enum SystemPrompts {
     static func buildContextString(context: ConversationContext) -> String {
         var contextString = ""
         
-        // Add portfolio context if available
-        if let portfolioName = context.portfolioName {
-            contextString += "\n\nPortfolio: \(portfolioName)"
+        if let name = context.portfolioName {
+            contextString += "\n\nPortfolio: \(name)"
         }
         
-        if let riskProfile = context.riskProfile {
-            contextString += "\nRisk Profile: \(riskProfile)"
+        if let risk = context.riskProfile {
+            contextString += "\nRisk Profile: \(risk)"
         }
         
-        if !context.positions.isEmpty {
-            contextString += "\n\nCurrent Positions:"
-            for position in context.positions {
-                contextString += "\n- \(position.symbol): \(String(format: "%.2f", position.shares)) shares"
+        if let currency = context.portfolioCurrency {
+            contextString += "\nBase Currency: \(currency)"
+        }
+        
+        if let totalValue = context.totalValue,
+           let totalCost = context.totalCost,
+           let currency = context.portfolioCurrency {
+            
+            let currencySymbol = Currency(rawValue: currency)?.symbol ?? currency
+            
+            contextString += "\n\n═══════════════════════════════════════"
+            contextString += "\nPORTFOLIO SUMMARY"
+            contextString += "\n═══════════════════════════════════════"
+            contextString += "\nTotal Value: \(currencySymbol)\(formatNumber(totalValue))"
+            contextString += "\nTotal Cost: \(currencySymbol)\(formatNumber(totalCost))"
+            
+            if let pl = context.totalProfitLoss {
+                let plPercent = context.profitLossPercentage ?? 0
+                let sign = pl >= 0 ? "+" : ""
+                contextString += "\nGain/Loss: \(sign)\(currencySymbol)\(formatNumber(abs(pl))) (\(sign)\(String(format: "%.1f", plPercent * 100))%)"
             }
         }
         
-        if let allocation = context.targetAllocation, !allocation.isEmpty {
-            contextString += "\n\nTarget Allocation:"
-            for (symbol, percentage) in allocation {
-                contextString += "\n- \(symbol): \(String(format: "%.1f", percentage * 100))%"
+        let securities = context.positions.filter { $0.assetType != "cash" }
+        let cashPositions = context.positions.filter { $0.assetType == "cash" }
+        
+        if !securities.isEmpty {
+            contextString += "\n\n═══════════════════════════════════════"
+            contextString += "\nSECURITIES"
+            contextString += "\n═══════════════════════════════════════"
+            
+            for pos in securities {
+                let currencySymbol = Currency(rawValue: pos.currency)?.symbol ?? pos.currency
+                contextString += "\n• \(pos.symbol) (\(pos.name))"
+                contextString += "\n  Shares: \(formatNumber(pos.shares))"
+                contextString += "\n  Price: \(currencySymbol)\(formatNumber(pos.currentPrice))"
+                contextString += "\n  Value: \(currencySymbol)\(formatNumber(pos.currentValue))"
+                contextString += "\n  Cost: \(currencySymbol)\(formatNumber(pos.totalCost))"
+                
+                if let pl = pos.profitLoss, let plPercent = pos.profitLossPercentage {
+                    let sign = pl >= 0 ? "+" : ""
+                    contextString += "\n  Return: \(sign)\(String(format: "%.1f", plPercent * 100))%"
+                }
+                
+                if let weight = pos.weight {
+                    contextString += "\n  Weight: \(String(format: "%.1f", weight * 100))%"
+                }
             }
+        }
+        
+        if !cashPositions.isEmpty {
+            contextString += "\n\n═══════════════════════════════════════"
+            contextString += "\nCASH"
+            contextString += "\n═══════════════════════════════════════"
+            
+            for cash in cashPositions {
+                let currencySymbol = Currency(rawValue: cash.currency)?.symbol ?? cash.currency
+                contextString += "\n• \(cash.name): \(currencySymbol)\(formatNumber(cash.currentValue))"
+                
+                if let rates = context.exchangeRates,
+                   let baseCurrency = context.portfolioCurrency,
+                   cash.currency != baseCurrency,
+                   let baseRate = rates[baseCurrency],
+                   let currencyRate = rates[cash.currency] {
+                    
+                    let convertedValue = cash.currentValue * (baseRate / currencyRate)
+                    let baseSymbol = Currency(rawValue: baseCurrency)?.symbol ?? baseCurrency
+                    contextString += " (\(baseSymbol)\(formatNumber(convertedValue)))"
+                }
+            }
+            
+            let totalCash = cashPositions.reduce(0) { $0 + $1.currentValue }
+            if let total = context.totalValue, total > 0 {
+                let cashPercent = totalCash / total * 100
+                contextString += "\n\nCash Total: \(String(format: "%.1f", cashPercent))% of portfolio"
+            }
+        }
+        
+        if let targets = context.targetAllocation, !targets.isEmpty {
+            contextString += "\n\n═══════════════════════════════════════"
+            contextString += "\nTARGET ALLOCATION"
+            contextString += "\n═══════════════════════════════════════"
+            
+            for (symbol, targetPercent) in targets.sorted(by: { $0.key < $1.key }) {
+                let actualPercent = context.positions
+                    .filter { $0.symbol == symbol }
+                    .compactMap { $0.weight }
+                    .first ?? 0
+                
+                let drift = actualPercent - targetPercent
+                let driftStr = drift >= 0 ? "+\(String(format: "%.1f", drift * 100))%" : "\(String(format: "%.1f", drift * 100))%"
+                let status = abs(drift) > 0.05 ? " ⚠️" : ""
+                
+                contextString += "\n• \(symbol): Target \(String(format: "%.1f", targetPercent * 100))%, Actual \(String(format: "%.1f", actualPercent * 100))%, Drift \(driftStr)\(status)"
+            }
+        }
+        
+        if let expected = context.expectedReturn, let maxDD = context.maxDrawdown {
+            contextString += "\n\n═══════════════════════════════════════"
+            contextString += "\nRISK METRICS"
+            contextString += "\n═══════════════════════════════════════"
+            contextString += "\nExpected Return: \(String(format: "%.1f", expected * 100))%"
+            contextString += "\nMax Drawdown Limit: \(String(format: "%.1f", maxDD * 100))%"
         }
         
         return contextString
+    }
+    
+    private static func formatNumber(_ value: Double) -> String {
+        if abs(value) >= 1_000_000 {
+            return String(format: "%.2fM", value / 1_000_000)
+        } else if abs(value) >= 1_000 {
+            return String(format: "%.2fK", value / 1_000)
+        } else {
+            return String(format: "%.2f", value)
+        }
     }
 }
 

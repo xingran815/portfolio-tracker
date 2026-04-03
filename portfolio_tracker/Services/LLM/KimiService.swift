@@ -153,7 +153,15 @@ actor KimiService: LLMServiceProtocol {
                     portfolioName: nil,
                     positions: [],
                     riskProfile: nil,
-                    targetAllocation: nil
+                    targetAllocation: nil,
+                    totalValue: nil,
+                    totalCost: nil,
+                    totalProfitLoss: nil,
+                    profitLossPercentage: nil,
+                    portfolioCurrency: nil,
+                    expectedReturn: nil,
+                    maxDrawdown: nil,
+                    exchangeRates: nil
                 ),
                 history: []
             )

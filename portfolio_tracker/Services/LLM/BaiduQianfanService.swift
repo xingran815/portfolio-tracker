@@ -152,7 +152,20 @@ actor BaiduQianfanService: LLMServiceProtocol {
             // Make a simple test request
             let stream = sendMessage(
                 "test",
-                context: ConversationContext(portfolioName: nil, positions: [], riskProfile: nil, targetAllocation: nil),
+                context: ConversationContext(
+                    portfolioName: nil,
+                    positions: [],
+                    riskProfile: nil,
+                    targetAllocation: nil,
+                    totalValue: nil,
+                    totalCost: nil,
+                    totalProfitLoss: nil,
+                    profitLossPercentage: nil,
+                    portfolioCurrency: nil,
+                    expectedReturn: nil,
+                    maxDrawdown: nil,
+                    exchangeRates: nil
+                ),
                 history: []
             )
             
