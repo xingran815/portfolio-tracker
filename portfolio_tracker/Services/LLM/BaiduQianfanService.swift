@@ -274,9 +274,9 @@ actor BaiduQianfanService: LLMServiceProtocol {
                 lastError = error
                 
                 // Check if we should retry
-                if isRetryableError(error) && attempt < configuration.maxRetries - 1 {
-                    let delay = configuration.retryDelay * Double(attempt + 1)
-                    logger.warning("Request failed, retrying in \(delay)s (attempt \(attempt + 1)/\(configuration.maxRetries))")
+                if isRetryableError(error) && attempt < self.configuration.maxRetries - 1 {
+                    let delay = self.configuration.retryDelay * Double(attempt + 1)
+                    logger.warning("Request failed, retrying in \(delay)s (attempt \(attempt + 1)/\(self.configuration.maxRetries))")
                     try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 } else {
                     throw error
@@ -316,49 +316,5 @@ actor BaiduQianfanService: LLMServiceProtocol {
             }
         }
         return true
-    }
-}
-
-// MARK: - System Prompts (Shared with KimiService)
-
-enum SystemPrompts {
-    static let basePrompt = """
-    You are a professional investment advisor specializing in portfolio management and rebalancing strategies. 
-    You provide clear, actionable advice based on modern portfolio theory and risk management principles.
-    Always consider the user's portfolio context when providing recommendations.
-    
-    Key principles:
-    - Explain your reasoning clearly
-    - Consider risk tolerance and investment goals
-    - Provide specific, actionable recommendations
-    - Acknowledge limitations and risks
-    """
-    
-    static func buildContextString(context: ConversationContext) -> String {
-        var contextStr = basePrompt + "\n\n"
-        
-        if let name = context.portfolioName {
-            contextStr += "Portfolio: \(name)\n"
-        }
-        
-        if !context.positions.isEmpty {
-            contextStr += "\nCurrent Positions:\n"
-            for pos in context.positions {
-                contextStr += "- \(pos.symbol): \(pos.shares) shares @ $\(String(format: "%.2f", pos.currentValue))\n"
-            }
-        }
-        
-        if let risk = context.riskProfile {
-            contextStr += "\nRisk Profile: \(risk)\n"
-        }
-        
-        if let allocation = context.targetAllocation, !allocation.isEmpty {
-            contextStr += "\nTarget Allocation:\n"
-            for (symbol, weight) in allocation.sorted(by: { $0.key < $1.key }) {
-                contextStr += "- \(symbol): \(Int(weight * 100))%\n"
-            }
-        }
-        
-        return contextStr
     }
 }

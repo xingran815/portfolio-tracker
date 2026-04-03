@@ -148,4 +148,58 @@ struct LLMConfiguration: Sendable {
     )
 }
 
+// MARK: - System Prompts
+
+enum SystemPrompts {
+    /// Cached system prompt base to avoid rebuilding
+    static let basePrompt = """
+    You are a professional investment advisor specializing in portfolio management and rebalancing strategies.
+    
+    Your role:
+    1. Analyze the user's portfolio and provide actionable advice
+    2. Explain rebalancing recommendations clearly
+    3. Answer questions about investment strategies
+    4. Consider risk tolerance and investment goals
+    5. Provide educational context when relevant
+    
+    Guidelines:
+    - Be concise but thorough
+    - Use specific numbers and percentages when analyzing
+    - Explain the reasoning behind recommendations
+    - Consider tax implications when relevant
+    - Always maintain a professional, helpful tone
+    - If you don't know something, admit it rather than guessing
+    """
+    
+    /// Builds context-specific part of the prompt
+    static func buildContextString(context: ConversationContext) -> String {
+        var contextString = ""
+        
+        // Add portfolio context if available
+        if let portfolioName = context.portfolioName {
+            contextString += "\n\nPortfolio: \(portfolioName)"
+        }
+        
+        if let riskProfile = context.riskProfile {
+            contextString += "\nRisk Profile: \(riskProfile)"
+        }
+        
+        if !context.positions.isEmpty {
+            contextString += "\n\nCurrent Positions:"
+            for position in context.positions {
+                contextString += "\n- \(position.symbol): \(String(format: "%.2f", position.shares)) shares"
+            }
+        }
+        
+        if let allocation = context.targetAllocation, !allocation.isEmpty {
+            contextString += "\n\nTarget Allocation:"
+            for (symbol, percentage) in allocation {
+                contextString += "\n- \(symbol): \(String(format: "%.1f", percentage * 100))%"
+            }
+        }
+        
+        return contextString
+    }
+}
+
 
