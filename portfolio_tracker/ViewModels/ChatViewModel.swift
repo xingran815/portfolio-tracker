@@ -169,26 +169,47 @@ final class ChatViewModel {
         await llmService.validateAPIKey()
     }
     
-    /// Automatically switches to real Kimi API service if API key is available
+    /// Automatically switches to real LLM service if API key is available
     /// Called during initialization
     private func autoSwitchToRealServiceIfAvailable() async {
-        let apiKeyManager = APIKeyManager.shared
-        if await apiKeyManager.hasKey(for: .kimi) {
-            llmService = KimiService(apiKeyManager: apiKeyManager)
-            logger.info("Auto-switched to real Kimi API service on initialization")
-        }
+        llmService = await LLMServiceFactory.shared.getService()
+        logger.info("Auto-switched to LLM service based on provider preference")
     }
     
-    /// Switches to real Kimi API service if API key is available
+    /// Switches to a different LLM provider
+    /// - Parameter provider: The provider to switch to
+    func switchProvider(_ provider: LLMProvider) async {
+        await LLMServiceFactory.shared.setProvider(provider)
+        llmService = await LLMServiceFactory.shared.getService()
+        logger.info("Switched to \(provider.rawValue) provider")
+    }
+    
+    /// Switches Baidu Qianfan model
+    /// - Parameter model: The model to use
+    func switchBaiduModel(_ model: BaiduQianfanService.Model) async {
+        await LLMServiceFactory.shared.setBaiduQianfanModel(model)
+        llmService = await LLMServiceFactory.shared.refreshService()
+        logger.info("Switched to Baidu Qianfan model: \(model.rawValue)")
+    }
+    
+    /// Gets the current LLM provider
+    /// - Returns: The current provider
+    func getCurrentProvider() -> LLMProvider {
+        LLMServiceFactory.shared.getProvider()
+    }
+    
+    /// Gets the selected Baidu Qianfan model
+    /// - Returns: The selected model
+    func getBaiduModel() -> BaiduQianfanService.Model {
+        LLMServiceFactory.shared.getBaiduQianfanModel()
+    }
+    
+    /// Switches to real LLM service if API key is available
     /// Call this when API key is added in settings
     func switchToRealService() async {
         guard !isUsingRealAPI else { return }
-        
-        let apiKeyManager = APIKeyManager.shared
-        if await apiKeyManager.hasKey(for: .kimi) {
-            llmService = KimiService(apiKeyManager: apiKeyManager)
-            logger.info("Switched to real Kimi API service")
-        }
+        llmService = await LLMServiceFactory.shared.refreshService()
+        logger.info("Refreshed LLM service")
     }
     
     /// Switches back to mock service (for testing)
