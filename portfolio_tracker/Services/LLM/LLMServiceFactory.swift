@@ -8,6 +8,16 @@
 import Foundation
 import os.log
 
+// MARK: - Notification Names
+
+extension Notification.Name {
+    /// Posted when LLM model selection changes
+    static let llmModelDidChange = Notification.Name("com.portfolio_tracker.llmModelDidChange")
+    
+    /// Posted when LLM provider changes (Kimi ↔ Baidu Qianfan)
+    static let llmProviderDidChange = Notification.Name("com.portfolio_tracker.llmProviderDidChange")
+}
+
 /// LLM Provider options
 enum LLMProvider: String, Sendable, CaseIterable {
     case kimi
@@ -63,6 +73,9 @@ actor LLMServiceFactory {
         UserDefaults.standard.set(provider.rawValue, forKey: providerKey)
         currentService = nil
         logger.info("Switched LLM provider to: \(provider.rawValue)")
+        
+        // Notify listeners that provider changed
+        NotificationCenter.default.post(name: .llmProviderDidChange, object: nil)
     }
     
     /// Gets the current LLM provider
@@ -78,6 +91,9 @@ actor LLMServiceFactory {
         UserDefaults.standard.set(model.rawValue, forKey: modelKey)
         currentService = nil
         logger.info("Switched Baidu Qianfan model to: \(model.rawValue)")
+        
+        // Notify listeners that model changed
+        NotificationCenter.default.post(name: .llmModelDidChange, object: nil)
     }
     
     /// Gets the selected Baidu Qianfan model

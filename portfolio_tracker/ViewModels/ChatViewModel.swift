@@ -51,7 +51,9 @@ final class ChatViewModel {
     private var currentAssistantMessageId: UUID?
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "ChatViewModel")
     
-    nonisolated deinit {}
+    nonisolated deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
     
     /// Whether the service is using real API or mock
     var isUsingRealAPI: Bool {
@@ -69,10 +71,44 @@ final class ChatViewModel {
         loadChatHistory()
         addWelcomeMessageIfNeeded()
         
+        // Listen for LLM configuration changes
+        setupLLMChangeObservers()
+        
         // Check for real API key and switch if available
         Task {
             await autoSwitchToRealServiceIfAvailable()
         }
+    }
+    
+    /// Sets up notification observers for LLM configuration changes
+    private func setupLLMChangeObservers() {
+        // Listen for model changes
+        NotificationCenter.default.addObserver(
+            forName: .llmModelDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { [weak self] in
+                await self?.handleLLMConfigurationChange()
+            }
+        }
+        
+        // Listen for provider changes
+        NotificationCenter.default.addObserver(
+            forName: .llmProviderDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { [weak self] in
+                await self?.handleLLMConfigurationChange()
+            }
+        }
+    }
+    
+    /// Handles LLM model or provider changes by refreshing the service
+    private func handleLLMConfigurationChange() async {
+        llmService = await LLMServiceFactory.shared.refreshService()
+        logger.info("Refreshed LLM service due to configuration change")
     }
     
     // MARK: - Public Methods
