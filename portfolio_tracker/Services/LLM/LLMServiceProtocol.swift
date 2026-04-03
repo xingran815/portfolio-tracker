@@ -93,9 +93,9 @@ enum LLMServiceError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .apiKeyMissing:
-            return "Kimi API key not configured. Please add your API key in Settings."
+            return "API key not configured. Please add your API key in Settings."
         case .invalidAPIKey:
-            return "Invalid API key. Please check your Kimi API key in Settings."
+            return "Invalid API key. Please check your API key in Settings."
         case .networkError(let message):
             return "Network error: \(message)"
         case .rateLimited:

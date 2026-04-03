@@ -124,11 +124,11 @@ actor BaiduQianfanService: LLMServiceProtocol {
                     continuation.finish()
                     
                 } catch let error as LLMServiceError {
-                    logger.error("LLM error: \(error.localizedDescription)")
+                    logger.error("[Baidu Qianfan] LLM error: \(error.localizedDescription)")
                     continuation.yield(.failure(error))
                     continuation.finish()
                 } catch {
-                    logger.error("Unexpected error: \(error.localizedDescription)")
+                    logger.error("[Baidu Qianfan] Unexpected error: \(error.localizedDescription)")
                     let wrappedError = LLMServiceError.networkError(error.localizedDescription)
                     continuation.yield(.failure(wrappedError))
                     continuation.finish()
