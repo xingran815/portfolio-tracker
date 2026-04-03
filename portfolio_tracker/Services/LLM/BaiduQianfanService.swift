@@ -362,18 +362,3 @@ enum SystemPrompts {
         return contextStr
     }
 }
-
-// MARK: - LLMConfiguration Extension
-
-extension LLMConfiguration {
-    static let `default` = LLMConfiguration(
-        model: "kimi-k2.5",
-        temperature: 0.7,
-        maxTokens: 4096,
-        topP: 1.0,
-        requestTimeout: 60.0,
-        maxRetries: 3,
-        retryDelay: 2.0,
-        maxContextLength: 50
-    )
-}
