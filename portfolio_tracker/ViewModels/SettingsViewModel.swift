@@ -115,8 +115,8 @@ final class SettingsViewModel {
         baiduqianfanStatus = isBaiduqianfanConfigured ? .valid : .unknown
         
         // Load provider preference
-        selectedProvider = LLMServiceFactory.shared.getProvider()
-        selectedBaiduModel = LLMServiceFactory.shared.getBaiduQianfanModel()
+        selectedProvider = await LLMServiceFactory.shared.getProvider()
+        selectedBaiduModel = await LLMServiceFactory.shared.getBaiduQianfanModel()
         
         logger.info("API key status loaded - AlphaVantage: \(self.isAlphaVantageConfigured), Kimi: \(self.isKimiConfigured), Baidu Qianfan: \(self.isBaiduqianfanConfigured)")
     }
@@ -320,7 +320,8 @@ final class SettingsViewModel {
             return
         }
         
-        guard APIKeyManager.shared.isValidKeyFormat(key, for: .baiduqianfan) else {
+        let isValidFormat = await APIKeyManager.shared.isValidKeyFormat(key, for: .baiduqianfan)
+        guard isValidFormat else {
             showError(message: "Invalid API key format. Baidu Qianfan keys should start with 'bce-'")
             return
         }

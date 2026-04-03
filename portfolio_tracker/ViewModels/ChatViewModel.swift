@@ -194,14 +194,14 @@ final class ChatViewModel {
     
     /// Gets the current LLM provider
     /// - Returns: The current provider
-    func getCurrentProvider() -> LLMProvider {
-        LLMServiceFactory.shared.getProvider()
+    func getCurrentProvider() async -> LLMProvider {
+        await LLMServiceFactory.shared.getProvider()
     }
     
     /// Gets the selected Baidu Qianfan model
     /// - Returns: The selected model
-    func getBaiduModel() -> BaiduQianfanService.Model {
-        LLMServiceFactory.shared.getBaiduQianfanModel()
+    func getBaiduModel() async -> BaiduQianfanService.Model {
+        await LLMServiceFactory.shared.getBaiduQianfanModel()
     }
     
     /// Switches to real LLM service if API key is available
