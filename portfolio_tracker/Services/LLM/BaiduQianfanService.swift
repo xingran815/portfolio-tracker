@@ -217,7 +217,9 @@ actor BaiduQianfanService: LLMServiceProtocol {
         history: [ChatMessage],
         apiKey: String
     ) throws -> URLRequest {
-        let url = URL(string: "\(baseURL)/chat/completions")!
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            throw LLMServiceError.networkError("Invalid API URL: \(baseURL)/chat/completions")
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -232,8 +234,7 @@ actor BaiduQianfanService: LLMServiceProtocol {
         ]
         
         // Note: Thinking mode is automatic for Baidu Qianfan models
-        // budgetTokens: 32,000 (default, handled internally)
-        // All three models (kimi-k2.5, glm-5, minimax-m2.5) support thinking mode
+        // Uses platform default settings (models handle thinking internally)
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
@@ -250,8 +251,28 @@ actor BaiduQianfanService: LLMServiceProtocol {
         let systemContent = SystemPrompts.buildContextString(context: context)
         messages.append(["role": "system", "content": systemContent])
         
-        // History
-        for msg in history.suffix(configuration.maxContextLength) {
+        // Calculate available tokens for history
+        // Reserve tokens for: system message + new message + response buffer
+        let systemTokens = estimateTokenCount(systemContent)
+        let messageTokens = estimateTokenCount(message)
+        let responseBuffer = 4000  // Reserve 4k for response
+        let maxHistoryTokens = configuration.maxContextLength - systemTokens - messageTokens - responseBuffer
+        
+        // Add history messages that fit within token budget (newest first)
+        var currentHistoryTokens = 0
+        let reversedHistory = history.reversed()
+        var includedHistory: [ChatMessage] = []
+        
+        for msg in reversedHistory {
+            let msgTokens = estimateTokenCount(msg.content)
+            if currentHistoryTokens + msgTokens > maxHistoryTokens && !includedHistory.isEmpty {
+                break  // Stop if we'd exceed budget (but keep at least one message)
+            }
+            currentHistoryTokens += msgTokens
+            includedHistory.insert(msg, at: 0)  // Maintain chronological order
+        }
+        
+        for msg in includedHistory {
             messages.append(["role": msg.role.rawValue, "content": msg.content])
         }
         
@@ -259,6 +280,14 @@ actor BaiduQianfanService: LLMServiceProtocol {
         messages.append(["role": "user", "content": message])
         
         return messages
+    }
+    
+    /// Estimates token count for text
+    /// Uses approximate ratio: 1 token ≈ 4 characters for mixed English/Chinese
+    private func estimateTokenCount(_ text: String) -> Int {
+        // Rough estimation: 4 characters per token on average
+        // This works reasonably well for both English and Chinese
+        return max(1, text.count / 4)
     }
     
     // MARK: - SSE Parsing

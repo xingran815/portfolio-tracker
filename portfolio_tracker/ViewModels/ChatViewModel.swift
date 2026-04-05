@@ -405,7 +405,24 @@ final class ChatViewModel {
             logger.warning("Failed to fetch exchange rates: \(error)")
         }
         
-        let positionSet = portfolio.positions as? Set<Position> ?? []
+        guard let positionSet = portfolio.positions as? Set<Position> else {
+            logger.warning("Failed to cast positions to Set<Position> for portfolio: \(portfolio.name ?? "Unknown")")
+            return ConversationContext(
+                portfolioName: portfolio.name,
+                positions: [],
+                riskProfile: portfolio.riskProfile.displayName,
+                targetAllocation: portfolio.targetAllocation,
+                totalValue: portfolio.totalValue,
+                totalCost: portfolio.totalCost,
+                totalProfitLoss: portfolio.totalProfitLoss,
+                profitLossPercentage: portfolio.profitLossPercentage,
+                portfolioCurrency: baseCurrency.rawValue,
+                expectedReturn: portfolio.expectedReturn > 0 ? portfolio.expectedReturn : nil,
+                maxDrawdown: portfolio.maxDrawdown > 0 ? portfolio.maxDrawdown : nil,
+                exchangeRates: exchangeRates
+            )
+        }
+        
         let positions = positionSet.map { position -> ConversationContext.PositionSummary in
             let value = position.currentValue ?? 0
             let weight = portfolio.totalValue > 0 ? value / portfolio.totalValue : nil
