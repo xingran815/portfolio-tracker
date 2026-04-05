@@ -49,6 +49,14 @@ actor BaiduQianfanService: LLMServiceProtocol {
             case .minimax_m2_5: return 192_000
             }
         }
+        
+        var outputLimit: Int {
+            switch self {
+            case .kimi_k2_5: return 65_536
+            case .glm5: return 131_072
+            case .minimax_m2_5: return 131_072
+            }
+        }
     }
     
     private let model: Model
@@ -57,21 +65,34 @@ actor BaiduQianfanService: LLMServiceProtocol {
     
     init(
         apiKeyManager: APIKeyManager = .shared,
-        configuration: LLMConfiguration = .default,
+        configuration: LLMConfiguration? = nil,
         urlSession: URLSession? = nil,
         model: Model = .kimi_k2_5
     ) {
         self.apiKeyManager = apiKeyManager
-        self.configuration = configuration
         self.model = model
+        
+        // Create model-specific default configuration
+        let defaultConfig = LLMConfiguration(
+            model: model.rawValue,
+            temperature: 0.7,
+            maxTokens: model.outputLimit,
+            topP: 0.9,
+            requestTimeout: 90.0,  // 90 seconds for large context models
+            maxRetries: 3,
+            retryDelay: 1.0,
+            maxContextLength: model.contextLimit
+        )
+        
+        self.configuration = configuration ?? defaultConfig
         
         // Configure URLSession with timeout
         if let urlSession = urlSession {
             self.urlSession = urlSession
         } else {
             let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = configuration.requestTimeout
-            config.timeoutIntervalForResource = configuration.requestTimeout * 2
+            config.timeoutIntervalForRequest = self.configuration.requestTimeout
+            config.timeoutIntervalForResource = self.configuration.requestTimeout * 2
             self.urlSession = URLSession(configuration: config)
         }
     }
@@ -143,50 +164,45 @@ actor BaiduQianfanService: LLMServiceProtocol {
     }
     
     func validateAPIKey() async -> APIKeyValidationResult {
-        do {
-            // Check if API key exists
-            guard (try? await apiKeyManager.getKey(for: .baiduqianfan)) != nil else {
-                return .notConfigured
-            }
-            
-            // Make a simple test request
-            let stream = sendMessage(
-                "test",
-                context: ConversationContext(
-                    portfolioName: nil,
-                    positions: [],
-                    riskProfile: nil,
-                    targetAllocation: nil,
-                    totalValue: nil,
-                    totalCost: nil,
-                    totalProfitLoss: nil,
-                    profitLossPercentage: nil,
-                    portfolioCurrency: nil,
-                    expectedReturn: nil,
-                    maxDrawdown: nil,
-                    exchangeRates: nil
-                ),
-                history: []
-            )
-            
-            var hasValidResponse = false
-            for await result in stream {
-                switch result {
-                case .success:
-                    hasValidResponse = true
-                    break
-                case .failure(let error):
-                    if case .invalidAPIKey = error {
-                        return .invalid
-                    }
+        // Check if API key exists
+        guard (try? await apiKeyManager.getKey(for: .baiduqianfan)) != nil else {
+            return .notConfigured
+        }
+        
+        // Make a simple test request
+        let stream = sendMessage(
+            "test",
+            context: ConversationContext(
+                portfolioName: nil,
+                positions: [],
+                riskProfile: nil,
+                targetAllocation: nil,
+                totalValue: nil,
+                totalCost: nil,
+                totalProfitLoss: nil,
+                profitLossPercentage: nil,
+                portfolioCurrency: nil,
+                expectedReturn: nil,
+                maxDrawdown: nil,
+                exchangeRates: nil
+            ),
+            history: []
+        )
+        
+        var hasValidResponse = false
+        for await result in stream {
+            switch result {
+            case .success:
+                hasValidResponse = true
+                break
+            case .failure(let error):
+                if case .invalidAPIKey = error {
+                    return .invalid
                 }
             }
-            
-            return hasValidResponse ? .valid : .invalid
-            
-        } catch {
-            return .networkError(error.localizedDescription)
         }
+        
+        return hasValidResponse ? .valid : .invalid
     }
     
     func clearHistory() {
@@ -207,7 +223,7 @@ actor BaiduQianfanService: LLMServiceProtocol {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        var body: [String: Any] = [
+        let body: [String: Any] = [
             "model": model.rawValue,
             "messages": buildMessages(message: message, context: context, history: history),
             "temperature": configuration.temperature,
@@ -215,8 +231,9 @@ actor BaiduQianfanService: LLMServiceProtocol {
             "stream": true
         ]
         
-        // Note: Thinking mode is automatic for these models
-        // budgetTokens is handled internally by Baidu Qianfan
+        // Note: Thinking mode is automatic for Baidu Qianfan models
+        // budgetTokens: 32,000 (default, handled internally)
+        // All three models (kimi-k2.5, glm-5, minimax-m2.5) support thinking mode
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request

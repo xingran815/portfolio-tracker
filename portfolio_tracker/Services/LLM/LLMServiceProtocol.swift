@@ -190,7 +190,7 @@ enum SystemPrompts {
     """
     
     /// Builds context-specific part of the prompt
-    static func buildContextString(context: ConversationContext) -> String {
+    nonisolated static func buildContextString(context: ConversationContext) -> String {
         var contextString = ""
         
         if let name = context.portfolioName {

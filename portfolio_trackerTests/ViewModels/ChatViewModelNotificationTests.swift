@@ -107,13 +107,19 @@ final class ChatViewModelNotificationTests: XCTestCase {
     
     // MARK: - Observer Cleanup Tests
     
-    func testObserverRemovedOnDeinit() async {
+    func testObserverRemovedOnDeinit() async throws {
         // Given
-        var localViewModel: ChatViewModel? = ChatViewModel()
-        weak var weakViewModel = localViewModel
+        weak var weakViewModel: ChatViewModel?
         
-        // When - deallocate
-        localViewModel = nil
+        // Create and immediately release in MainActor context
+        await MainActor.run {
+            var localViewModel: ChatViewModel? = ChatViewModel()
+            weakViewModel = localViewModel
+            localViewModel = nil
+        }
+        
+        // Wait for async deallocation
+        try await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
         
         // Then - should be deallocated
         XCTAssertNil(weakViewModel, "ChatViewModel should be deallocated")

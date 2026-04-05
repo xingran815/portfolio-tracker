@@ -12,10 +12,10 @@ import os.log
 
 extension Notification.Name {
     /// Posted when LLM model selection changes
-    static let llmModelDidChange = Notification.Name("com.portfolio_tracker.llmModelDidChange")
+    nonisolated static let llmModelDidChange = Notification.Name("com.portfolio_tracker.llmModelDidChange")
     
     /// Posted when LLM provider changes (Kimi ↔ Baidu Qianfan)
-    static let llmProviderDidChange = Notification.Name("com.portfolio_tracker.llmProviderDidChange")
+    nonisolated static let llmProviderDidChange = Notification.Name("com.portfolio_tracker.llmProviderDidChange")
 }
 
 /// LLM Provider options
