@@ -18,7 +18,7 @@ See [SECURITY.md](SECURITY.md) for details.
 - Xcode 16.0+
 - Swift 6.0
 - Alpha Vantage API key (for US/HK stocks)
-- Kimi API key (optional, for AI advisor)
+- Kimi API key or Baidu Qianfan API key (optional, for AI advisor)
 
 **Note:** Chinese funds use 天天基金 API (free, no authentication required)
 
@@ -41,6 +41,11 @@ open portfolio_tracker.xcodeproj
 **Kimi API** (optional, for AI advisor):
 1. Get API key at [platform.moonshot.cn](https://platform.moonshot.cn)
 2. In the app: Settings → API Keys → Kimi API
+
+**Baidu Qianfan API** (optional, alternative AI advisor):
+1. Get API key at [Qianfan Platform](https://qianfan.baidu.com)
+2. In app: Settings → LLM Provider → Baidu Qianfan
+3. Choose model: kimi-k2.5 (256k), glm-5 (198k), or minimax-m2.5 (192k)
 
 **Chinese Funds** (no setup required):
 - Uses 天天基金 API (free, no API key)
@@ -87,7 +92,8 @@ SwiftUI → ViewModels → Services → CoreData
          │ AlphaVantage API     │ (US/HK stocks)
          │ 天天基金 API          │ (Chinese funds)
          │ Exchange Rate API    │ (Currency conversion)
-         │ Kimi API             │ (LLM advisor)
+          │ Kimi API             │ (LLM advisor option 1)
+          │ Baidu Qianfan API    │ (LLM advisor option 2)
          └──────────────────────┘
 ```
 
@@ -104,7 +110,7 @@ SwiftUI → ViewModels → Services → CoreData
 
 - [x] Phase 1: CoreData Models + Xcode Project
 - [x] Phase 2: AlphaVantage Provider
-- [x] Phase 3: LLM Service (Kimi API)
+- [x] Phase 3: LLM Service (Kimi API + Baidu Qianfan)
 - [x] Phase 4: MD Parser
 - [x] Phase 5: Rebalancing Engine
 - [x] Phase 6: SwiftUI Views

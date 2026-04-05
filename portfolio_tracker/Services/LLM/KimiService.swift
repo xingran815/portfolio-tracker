@@ -121,11 +121,11 @@ actor KimiService: LLMServiceProtocol {
                     continuation.finish()
                     
                 } catch let error as LLMServiceError {
-                    logger.error("LLM error: \(error.localizedDescription)")
+                    logger.error("[Kimi] LLM error: \(error.localizedDescription)")
                     continuation.yield(.failure(error))
                     continuation.finish()
                 } catch {
-                    logger.error("Unexpected error: \(error.localizedDescription)")
+                    logger.error("[Kimi] Unexpected error: \(error.localizedDescription)")
                     let wrappedError = LLMServiceError.networkError(error.localizedDescription)
                     continuation.yield(.failure(wrappedError))
                     continuation.finish()
@@ -153,7 +153,15 @@ actor KimiService: LLMServiceProtocol {
                     portfolioName: nil,
                     positions: [],
                     riskProfile: nil,
-                    targetAllocation: nil
+                    targetAllocation: nil,
+                    totalValue: nil,
+                    totalCost: nil,
+                    totalProfitLoss: nil,
+                    profitLossPercentage: nil,
+                    portfolioCurrency: nil,
+                    expectedReturn: nil,
+                    maxDrawdown: nil,
+                    exchangeRates: nil
                 ),
                 history: []
             )
@@ -414,61 +422,5 @@ actor KimiService: LLMServiceProtocol {
         }
         
         return nil
-    }
-}
-
-// MARK: - System Prompts
-
-enum SystemPrompts {
-    /// Cached system prompt base to avoid rebuilding
-    static let basePrompt = """
-    You are a professional investment advisor specializing in portfolio management and rebalancing strategies.
-    
-    Your role:
-    1. Analyze the user's portfolio and provide actionable advice
-    2. Explain rebalancing recommendations clearly
-    3. Answer questions about investment strategies
-    4. Consider risk tolerance and investment goals
-    5. Provide educational context when relevant
-    
-    Guidelines:
-    - Be concise but thorough
-    - Use specific numbers and percentages when analyzing
-    - Explain the reasoning behind recommendations
-    - Consider tax implications when relevant
-    - Always maintain a professional, helpful tone
-    - If you don't know something, admit it rather than guessing
-    """
-    
-    /// Builds context-specific part of the prompt
-    static func buildContextString(context: ConversationContext) -> String {
-        var contextString = ""
-        
-        // Add portfolio context if available
-        if let portfolioName = context.portfolioName {
-            contextString += "\n\nPortfolio: \(portfolioName)"
-        }
-        
-        if let riskProfile = context.riskProfile {
-            contextString += "\nRisk Profile: \(riskProfile)"
-        }
-        
-        if !context.positions.isEmpty {
-            contextString += "\n\nCurrent Positions:"
-            for position in context.positions {
-                contextString += "\n- \(position.symbol): \(String(format: "%.2f", position.shares)) shares"
-            }
-        }
-        
-        if let allocation = context.targetAllocation, !allocation.isEmpty {
-            contextString += "\n\nTarget Allocation:"
-            for (symbol, percentage) in allocation {
-                contextString += "\n- \(symbol): \(String(format: "%.1f", percentage * 100))%"
-            }
-        }
-        
-        contextString += "\n\nRemember: This is educational advice. Always consult with a licensed financial advisor for personalized recommendations."
-        
-        return contextString
     }
 }
