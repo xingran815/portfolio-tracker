@@ -30,6 +30,9 @@ final class ChatViewModel {
     /// Whether to include portfolio context with messages
     var includePortfolioContext = true
     
+    /// Whether web search is enabled for current message (per-message toggle)
+    var isWebSearchEnabled = false
+    
     /// Current portfolio for context (CoreData object)
     private var portfolio: Portfolio?
     
@@ -58,6 +61,19 @@ final class ChatViewModel {
     /// Whether the service is using real API or mock
     var isUsingRealAPI: Bool {
         !(llmService is MockLLMService)
+    }
+    
+    /// Whether web search is available for the current provider
+    var isWebSearchAvailable: Bool {
+        get async {
+            let provider = await LLMServiceFactory.shared.getProvider()
+            switch provider {
+            case .kimi:
+                return true
+            case .baiduqianfan:
+                return await TavilyService.shared.isConfigured()
+            }
+        }
     }
     
     // MARK: - Initialization
@@ -144,13 +160,15 @@ final class ChatViewModel {
         messages.append(userMessage)
         
         let messageToSend = inputText
+        let useWebSearch = isWebSearchEnabled
         inputText = ""
+        isWebSearchEnabled = false  // Reset after each message (per-message toggle)
         isLoading = true
         errorMessage = nil
         currentAssistantMessageId = nil
         
         currentTask = Task {
-            await streamResponse(to: messageToSend)
+            await streamResponse(to: messageToSend, enableWebSearch: useWebSearch)
         }
     }
     
@@ -267,7 +285,7 @@ final class ChatViewModel {
     
     // MARK: - Private Methods
     
-    private func streamResponse(to message: String) async {
+    private func streamResponse(to message: String, enableWebSearch: Bool = false) async {
         // Build context from portfolio
         let context = includePortfolioContext ? await buildContext() : ConversationContext(
             portfolioName: nil,
@@ -294,7 +312,8 @@ final class ChatViewModel {
         let stream = await llmService.sendMessage(
             message,
             context: context,
-            history: Array(messages.dropLast()) // Exclude current assistant message
+            history: Array(messages.dropLast()), // Exclude current assistant message
+            enableWebSearch: enableWebSearch
         )
         
         var fullResponse = ""

@@ -12,6 +12,8 @@ struct ChatView: View {
     @State private var viewModel: ChatViewModel
     @State private var showingClearConfirmation = false
     @State private var showingContextInfo = false
+    @State private var isWebSearchAvailable = false
+    @Environment(\.scenePhase) private var scenePhase
     
     let portfolioData: PortfolioViewData?
     
@@ -37,6 +39,16 @@ struct ChatView: View {
         }
         .onAppear {
             viewModel.setPortfolio(portfolioData)
+            Task {
+                isWebSearchAvailable = await viewModel.isWebSearchAvailable
+            }
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            if newPhase == .active && oldPhase == .inactive {
+                Task {
+                    isWebSearchAvailable = await viewModel.isWebSearchAvailable
+                }
+            }
         }
         .onChange(of: portfolioData?.id) { _, _ in
             viewModel.setPortfolio(portfolioData)
@@ -164,6 +176,22 @@ struct ChatView: View {
     private var inputArea: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
+                // Web search toggle (only show if available)
+                if isWebSearchAvailable {
+                    Button {
+                        viewModel.isWebSearchEnabled.toggle()
+                    } label: {
+                        Image(systemName: viewModel.isWebSearchEnabled ? 
+                              "globe.badge.chevron.backward" : "globe")
+                            .font(.title3)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(viewModel.isWebSearchEnabled ? .blue : .secondary)
+                    .help(viewModel.isWebSearchEnabled ? 
+                          "Web search enabled - Click to disable" : 
+                          "Enable web search for this message")
+                }
+                
                 TextField("输入消息...", text: $viewModel.inputText, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...5)
@@ -197,6 +225,12 @@ struct ChatView: View {
                 Text(viewModel.isLoading ? "AI 正在思考..." : "按 ⌘+Enter 发送")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                
+                if viewModel.isWebSearchEnabled && isWebSearchAvailable {
+                    Text("• 网页搜索已启用")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                }
                 
                 Spacer()
                 

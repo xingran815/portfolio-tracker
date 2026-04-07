@@ -44,7 +44,7 @@ actor LLMServiceFactory {
     
     // MARK: - Initialization
     
-    private init(apiKeyManager: APIKeyManager = .shared) {
+    init(apiKeyManager: APIKeyManager = .shared) {
         self.apiKeyManager = apiKeyManager
         
         // Load provider preference (default to Baidu Qianfan)

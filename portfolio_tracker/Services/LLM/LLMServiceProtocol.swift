@@ -128,11 +128,13 @@ protocol LLMServiceProtocol: Actor {
     ///   - message: User's message
     ///   - context: Portfolio context for personalized responses
     ///   - history: Previous conversation history
+    ///   - enableWebSearch: Whether to enable web search for this message
     /// - Returns: AsyncStream of response chunks
     func sendMessage(
         _ message: String,
         context: ConversationContext,
-        history: [ChatMessage]
+        history: [ChatMessage],
+        enableWebSearch: Bool
     ) -> AsyncStream<Result<String, LLMServiceError>>
     
     /// Validates the API key by making a test request
@@ -141,6 +143,9 @@ protocol LLMServiceProtocol: Actor {
     
     /// Clears conversation history
     func clearHistory()
+    
+    /// Whether this service supports web search
+    var supportsWebSearch: Bool { get }
 }
 
 /// Configuration for LLM requests
@@ -169,25 +174,43 @@ struct LLMConfiguration: Sendable {
 // MARK: - System Prompts
 
 enum SystemPrompts {
-    /// Cached system prompt base to avoid rebuilding
-    static let basePrompt = """
-    You are a professional investment advisor specializing in portfolio management and rebalancing strategies.
-    
-    Your role:
-    1. Analyze the user's portfolio and provide actionable advice
-    2. Explain rebalancing recommendations clearly
-    3. Answer questions about investment strategies
-    4. Consider risk tolerance and investment goals
-    5. Provide educational context when relevant
-    
-    Guidelines:
-    - Be concise but thorough
-    - Use specific numbers and percentages when analyzing
-    - Explain the reasoning behind recommendations
-    - Consider tax implications when relevant
-    - Always maintain a professional, helpful tone
-    - If you don't know something, admit it rather than guessing
-    """
+    /// System prompt base with current date and web search instructions
+    static let basePrompt: String = {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .long
+        dateFormatter.timeStyle = .none
+        let currentDate = dateFormatter.string(from: Date())
+        
+        return """
+        You are a professional investment advisor specializing in portfolio management and rebalancing strategies.
+        
+        **CURRENT DATE: \(currentDate)**
+        
+        Your role:
+        1. Analyze the user's portfolio and provide actionable advice
+        2. Explain rebalancing recommendations clearly
+        3. Answer questions about investment strategies
+        4. Consider risk tolerance and investment goals
+        5. Provide educational context when relevant
+        
+        Guidelines:
+        - Be concise but thorough
+        - Use specific numbers and percentages when analyzing
+        - Explain the reasoning behind recommendations
+        - Consider tax implications when relevant
+        - Always maintain a professional, helpful tone
+        - If you don't know something, admit it rather than guessing
+        
+        **WEB SEARCH RESULTS HANDLING:**
+        When web search results are provided in the conversation context:
+        - You MUST use the information from web search results to answer questions
+        - Web search results contain REAL-TIME data as of the current date shown above
+        - This information supersedes your training knowledge which may be outdated
+        - ALWAYS cite sources using [1], [2], [3] format when referencing search data
+        - NEVER say you cannot access current information when web search results are provided
+        - If the user asks about recent market data, prices, or news, rely on web search results
+        """
+    }()
     
     /// Builds context-specific part of the prompt
     nonisolated static func buildContextString(context: ConversationContext) -> String {
