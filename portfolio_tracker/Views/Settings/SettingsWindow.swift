@@ -115,6 +115,11 @@ struct SettingsWindow: View {
                 .padding(.vertical, 8)
             
             kimiSection
+            
+            Divider()
+                .padding(.vertical, 8)
+            
+            tavilySection
         }
         .formStyle(.grouped)
         .navigationTitle(SettingsViewModel.SettingsTab.apiKeys.rawValue)
@@ -384,6 +389,92 @@ struct SettingsWindow: View {
     
     private var kimiSection: some View {
         llmSection
+    }
+    
+    private var tavilySection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header
+                HStack {
+                    Image(systemName: "globe")
+                        .font(.largeTitle)
+                        .foregroundStyle(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Tavily")
+                            .font(.headline)
+                        Text("Web Search API for AI chatbot")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    StatusIndicator(status: viewModel.tavilyStatus)
+                }
+                
+                // Description
+                Text("Enables real-time web search for Baidu Qianfan models. Kimi uses native web search.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                // Status and Actions
+                if !viewModel.isTavilyConfigured {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Tavily API Key:")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            
+                            Spacer()
+                            
+                            if let url = APIService.tavily.documentationURLValue {
+                                Link(destination: url) {
+                                    Text("Get API Key →")
+                                        .font(.caption)
+                                }
+                            }
+                        }
+                        
+                        TextField("Enter API Key (tvly-...)", text: $viewModel.tavilyKeyInput)
+                            .textFieldStyle(.roundedBorder)
+                        
+                        HStack {
+                            Text("Free tier: 1,000 searches/month")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            Spacer()
+                            
+                            Button("Save") {
+                                viewModel.saveTavilyKey()
+                            }
+                            .disabled(viewModel.tavilyKeyInput.isEmpty)
+                        }
+                    }
+                } else {
+                    HStack {
+                        Label("Configured", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        
+                        Spacer()
+                        
+                        Button("Validate") {
+                            viewModel.validateTavilyKey()
+                        }
+                        .disabled(viewModel.isValidating)
+                        
+                        Button("Delete") {
+                            viewModel.deleteTavilyKey()
+                        }
+                        .foregroundStyle(.red)
+                    }
+                }
+            }
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
     }
     
     // MARK: - About Settings
