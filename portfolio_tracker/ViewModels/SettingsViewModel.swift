@@ -51,11 +51,13 @@ final class SettingsViewModel {
     /// Validation status for SerpAPI
     var serpAPIStatus: ValidationStatus = .unknown
     
-    /// Selected LLM provider
-    var selectedProvider: LLMProvider = .baiduqianfan
+    /// Selected LLM provider (persisted via @AppStorage)
+    @ObservationIgnored
+    @AppStorage("llm_provider_preference") var selectedProvider: LLMProvider = .baiduqianfan
     
-    /// Selected Baidu Qianfan model
-    var selectedBaiduModel: BaiduQianfanService.Model = .kimi_k2_5
+    /// Selected Baidu Qianfan model (persisted via @AppStorage)
+    @ObservationIgnored
+    @AppStorage("baiduqianfan_model_preference") var selectedBaiduModel: BaiduQianfanService.Model = .kimi_k2_5
     
     /// Whether validation is in progress
     var isValidating = false
@@ -125,9 +127,9 @@ final class SettingsViewModel {
         baiduqianfanStatus = isBaiduqianfanConfigured ? .valid : .unknown
         serpAPIStatus = isSerpAPIConfigured ? .valid : .unknown
         
-        // Load provider preference
-        selectedProvider = await LLMServiceFactory.shared.getProvider()
-        selectedBaiduModel = await LLMServiceFactory.shared.getBaiduQianfanModel()
+        // Sync @AppStorage values to LLMServiceFactory
+        await LLMServiceFactory.shared.setProvider(selectedProvider)
+        await LLMServiceFactory.shared.setBaiduQianfanModel(selectedBaiduModel)
         
         logger.info("API key status loaded - AlphaVantage: \(self.isAlphaVantageConfigured), Kimi: \(self.isKimiConfigured), Baidu Qianfan: \(self.isBaiduqianfanConfigured), SerpAPI: \(self.isSerpAPIConfigured)")
     }
