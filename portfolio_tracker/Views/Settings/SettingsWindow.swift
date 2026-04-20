@@ -12,6 +12,9 @@ struct SettingsWindow: View {
     @State private var viewModel = SettingsViewModel()
     @Environment(\.dismiss) private var dismiss
     
+    @AppStorage("llm_provider_preference") private var selectedProvider: LLMProvider = .baiduqianfan
+    @AppStorage("baiduqianfan_model_preference") private var selectedBaiduModel: BaiduQianfanService.Model = .kimi_k2_5
+    
     var body: some View {
         NavigationSplitView {
             // Sidebar
@@ -238,12 +241,13 @@ struct SettingsWindow: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     
-                    Picker("Provider", selection: $viewModel.selectedProvider) {
+                    Picker("Provider", selection: $selectedProvider) {
                         Text("Baidu Qianfan").tag(LLMProvider.baiduqianfan)
                         Text("Kimi").tag(LLMProvider.kimi)
                     }
                     .pickerStyle(.radioGroup)
-                    .onChange(of: viewModel.selectedProvider) { _, newValue in
+                    .onChange(of: selectedProvider) { _, newValue in
+                        viewModel.selectedProvider = newValue
                         Task {
                             await LLMServiceFactory.shared.setProvider(newValue)
                         }
@@ -251,18 +255,19 @@ struct SettingsWindow: View {
                 }
                 
                 // Model Selection (only for Baidu Qianfan)
-                if viewModel.selectedProvider == .baiduqianfan {
+                if selectedProvider == .baiduqianfan {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Model:")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         
-                        Picker("Model", selection: $viewModel.selectedBaiduModel) {
+                        Picker("Model", selection: $selectedBaiduModel) {
                             ForEach(BaiduQianfanService.Model.allCases, id: \.self) { model in
                                 Text(model.displayName).tag(model)
                             }
                         }
-                        .onChange(of: viewModel.selectedBaiduModel) { _, newValue in
+                        .onChange(of: selectedBaiduModel) { _, newValue in
+                            viewModel.selectedBaiduModel = newValue
                             Task {
                                 await LLMServiceFactory.shared.setBaiduQianfanModel(newValue)
                             }
@@ -273,7 +278,7 @@ struct SettingsWindow: View {
                 Divider()
                 
                 // API Key Section (conditional based on provider)
-                if viewModel.selectedProvider == .kimi {
+                if selectedProvider == .kimi {
                     // Kimi API Key
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
