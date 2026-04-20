@@ -119,7 +119,7 @@ struct SettingsWindow: View {
             Divider()
                 .padding(.vertical, 8)
             
-            tavilySection
+            serpAPISection
         }
         .formStyle(.grouped)
         .navigationTitle(SettingsViewModel.SettingsTab.apiKeys.rawValue)
@@ -391,7 +391,7 @@ struct SettingsWindow: View {
         llmSection
     }
     
-    private var tavilySection: some View {
+    private var serpAPISection: some View {
         Section {
             VStack(alignment: .leading, spacing: 16) {
                 // Header
@@ -401,7 +401,7 @@ struct SettingsWindow: View {
                         .foregroundStyle(.blue)
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Tavily")
+                        Text("SerpAPI")
                             .font(.headline)
                         Text("Web Search API for AI chatbot")
                             .font(.caption)
@@ -410,7 +410,7 @@ struct SettingsWindow: View {
                     
                     Spacer()
                     
-                    StatusIndicator(status: viewModel.tavilyStatus)
+                    StatusIndicator(status: viewModel.serpAPIStatus)
                 }
                 
                 // Description
@@ -419,16 +419,16 @@ struct SettingsWindow: View {
                     .foregroundStyle(.secondary)
                 
                 // Status and Actions
-                if !viewModel.isTavilyConfigured {
+                if !viewModel.isSerpAPIConfigured {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("Tavily API Key:")
+                            Text("SerpAPI API Key:")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                             
                             Spacer()
                             
-                            if let url = APIService.tavily.documentationURLValue {
+                            if let url = APIService.serpAPI.documentationURLValue {
                                 Link(destination: url) {
                                     Text("Get API Key →")
                                         .font(.caption)
@@ -436,20 +436,20 @@ struct SettingsWindow: View {
                             }
                         }
                         
-                        TextField("Enter API Key (tvly-...)", text: $viewModel.tavilyKeyInput)
+                        TextField("Enter API Key", text: $viewModel.serpAPIKeyInput)
                             .textFieldStyle(.roundedBorder)
                         
                         HStack {
-                            Text("Free tier: 1,000 searches/month")
+                            Text("Pricing: $50/5,000 searches")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             
                             Spacer()
                             
                             Button("Save") {
-                                viewModel.saveTavilyKey()
+                                viewModel.saveSerpAPIKey()
                             }
-                            .disabled(viewModel.tavilyKeyInput.isEmpty)
+                            .disabled(viewModel.serpAPIKeyInput.isEmpty)
                         }
                     }
                 } else {
@@ -460,12 +460,12 @@ struct SettingsWindow: View {
                         Spacer()
                         
                         Button("Validate") {
-                            viewModel.validateTavilyKey()
+                            viewModel.validateSerpAPIKey()
                         }
                         .disabled(viewModel.isValidating)
                         
                         Button("Delete") {
-                            viewModel.deleteTavilyKey()
+                            viewModel.deleteSerpAPIKey()
                         }
                         .foregroundStyle(.red)
                     }

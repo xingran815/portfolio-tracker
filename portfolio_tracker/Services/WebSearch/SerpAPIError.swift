@@ -1,13 +1,13 @@
 //
-//  TavilyError.swift
+//  SerpAPIError.swift
 //  portfolio_tracker
 //
-//  Error types for Tavily web search service
+//  Error types for SerpAPI web search service
 //
 
 import Foundation
 
-enum TavilyError: LocalizedError, Sendable {
+enum SerpAPIError: LocalizedError, Sendable {
     case invalidAPIKey
     case rateLimited
     case quotaExceeded
@@ -20,11 +20,11 @@ enum TavilyError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .invalidAPIKey:
-            return "Invalid Tavily API key. Please check your settings."
+            return "Invalid SerpAPI key. Please check your settings."
         case .rateLimited:
             return "Too many search requests. Please wait a moment."
         case .quotaExceeded:
-            return "Tavily quota exceeded. Free tier: 1,000 searches/month."
+            return "SerpAPI quota exceeded. Check your plan limits."
         case .networkError(let message):
             return "Search failed: \(message)"
         case .invalidResponse:
@@ -32,7 +32,7 @@ enum TavilyError: LocalizedError, Sendable {
         case .noResults:
             return "No search results found."
         case .apiKeyNotConfigured:
-            return "Tavily API key not configured. Please add it in Settings."
+            return "SerpAPI key not configured. Please add it in Settings."
         case .timeout:
             return "Search request timed out."
         }
@@ -41,11 +41,11 @@ enum TavilyError: LocalizedError, Sendable {
     var recoverySuggestion: String? {
         switch self {
         case .invalidAPIKey:
-            return "Get a new API key at https://app.tavily.com"
+            return "Get a new API key at https://serpapi.com"
         case .rateLimited:
             return "Wait a few seconds before searching again."
         case .quotaExceeded:
-            return "Upgrade your Tavily plan or wait for quota reset."
+            return "Upgrade your SerpAPI plan or wait for quota reset."
         case .networkError:
             return "Check your internet connection."
         case .invalidResponse:
@@ -53,7 +53,7 @@ enum TavilyError: LocalizedError, Sendable {
         case .noResults:
             return "Try different search keywords."
         case .apiKeyNotConfigured:
-            return "Add your Tavily API key in Settings to enable web search."
+            return "Add your SerpAPI key in Settings to enable web search."
         case .timeout:
             return "Try a simpler search query."
         }

@@ -7,35 +7,123 @@
 
 import Foundation
 
-struct TavilySearchOptions: Sendable {
-    let maxResults: Int
-    let searchDepth: String
-    let includeAnswer: Bool
-    let topic: String
-    let timeRange: String?
+// MARK: - SerpAPI Models
+
+struct SerpAPIResponse: Codable {
+    let searchMetadata: SerpSearchMetadata?
+    let searchParameters: SerpSearchParameters?
+    let searchInformation: SerpSearchInformation?
+    let organicResults: [SerpOrganicResult]?
+    let relatedQuestions: [SerpRelatedQuestion]?
+    let knowledgeGraph: SerpKnowledgeGraph?
     
-    static let `default` = TavilySearchOptions(
-        maxResults: 5,
-        searchDepth: "basic",
-        includeAnswer: true,
-        topic: "finance",
-        timeRange: nil
-    )
-    
-    static let news = TavilySearchOptions(
-        maxResults: 5,
-        searchDepth: "basic",
-        includeAnswer: true,
-        topic: "news",
-        timeRange: "week"
-    )
+    private enum CodingKeys: String, CodingKey {
+        case searchMetadata = "search_metadata"
+        case searchParameters = "search_parameters"
+        case searchInformation = "search_information"
+        case organicResults = "organic_results"
+        case relatedQuestions = "related_questions"
+        case knowledgeGraph = "knowledge_graph"
+    }
 }
 
-struct TavilySearchResult: Sendable {
+struct SerpSearchMetadata: Codable {
+    let id: String?
+    let status: String?
+    let createdAt: String?
+    let processedAt: String?
+    let totalTimeTaken: Double?
+    
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case status
+        case createdAt = "created_at"
+        case processedAt = "processed_at"
+        case totalTimeTaken = "total_time_taken"
+    }
+}
+
+struct SerpSearchParameters: Codable {
+    let engine: String?
+    let q: String?
+    let googleDomain: String?
+    let hl: String?
+    let gl: String?
+    
+    private enum CodingKeys: String, CodingKey {
+        case engine
+        case q
+        case googleDomain = "google_domain"
+        case hl
+        case gl
+    }
+}
+
+struct SerpSearchInformation: Codable {
+    let queryDisplayed: String?
+    let totalResults: Int?
+    let timeTaken: Double?
+    
+    private enum CodingKeys: String, CodingKey {
+        case queryDisplayed = "query_displayed"
+        case totalResults = "total_results"
+        case timeTaken = "time_taken_displayed"
+    }
+}
+
+struct SerpOrganicResult: Codable {
+    let position: Int?
+    let title: String?
+    let link: String?
+    let displayedLink: String?
+    let snippet: String?
+    let date: String?
+    
+    private enum CodingKeys: String, CodingKey {
+        case position
+        case title
+        case link
+        case displayedLink = "displayed_link"
+        case snippet
+        case date
+    }
+}
+
+struct SerpRelatedQuestion: Codable {
+    let question: String?
+    let snippet: String?
+    let title: String?
+    let link: String?
+}
+
+struct SerpKnowledgeGraph: Codable {
+    let title: String?
+    let type: String?
+    let description: String?
+    let source: SerpKGSource?
+    
+    private enum CodingKeys: String, CodingKey {
+        case title
+        case type
+        case description
+        case source
+    }
+}
+
+struct SerpKGSource: Codable {
+    let name: String?
+    let link: String?
+}
+
+struct SerpAPIErrorResponse: Codable {
+    let error: String?
+}
+
+struct SerpSearchResult: Sendable {
     let query: String
-    let answer: String?
-    let results: [TavilySearchResultItem]
-    let responseTime: Double
+    let results: [SerpSearchResultItem]
+    let totalResults: Int?
+    let searchTime: Double?
     
     var hasResults: Bool {
         !results.isEmpty
@@ -55,20 +143,12 @@ struct TavilySearchResult: Sendable {
         ════════════════════════════════════════════════════════════
         Query: \(query)
         
+        **Search Results:**
+        
         """
         
-        if let answer = answer, !answer.isEmpty {
-            output += """
-            **AI-Generated Summary:**
-            \(answer)
-            
-            """
-        }
-        
-        output += "**Search Results:**\n\n"
-        
         for (index, item) in results.enumerated() {
-            let truncatedContent = Self.truncateAtSentence(item.content, maxLength: 800)
+            let truncatedContent = Self.truncateAtSentence(item.snippet, maxLength: 800)
             
             output += """
             [\(index + 1)] \(item.title)
@@ -117,40 +197,9 @@ struct TavilySearchResult: Sendable {
     }
 }
 
-struct TavilySearchResultItem: Sendable, Codable {
+struct SerpSearchResultItem: Sendable {
     let title: String
     let url: String
-    let content: String
-    let score: Double
-    let publishedDate: String?
-    
-    private enum CodingKeys: String, CodingKey {
-        case title
-        case url
-        case content
-        case score
-        case publishedDate = "published_date"
-    }
-}
-
-struct TavilyAPIResponse: Codable {
-    let query: String
-    let answer: String?
-    let results: [TavilySearchResultItem]
-    let responseTime: Double
-    
-    private enum CodingKeys: String, CodingKey {
-        case query
-        case answer
-        case results
-        case responseTime = "response_time"
-    }
-}
-
-struct TavilyAPIError: Codable {
-    let detail: TavilyErrorDetail?
-}
-
-struct TavilyErrorDetail: Codable {
-    let error: String?
+    let snippet: String
+    let position: Int
 }
