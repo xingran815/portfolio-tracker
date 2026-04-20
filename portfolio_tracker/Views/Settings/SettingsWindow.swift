@@ -247,7 +247,6 @@ struct SettingsWindow: View {
                     }
                     .pickerStyle(.radioGroup)
                     .onChange(of: selectedProvider) { _, newValue in
-                        viewModel.selectedProvider = newValue
                         Task {
                             await LLMServiceFactory.shared.setProvider(newValue)
                         }
@@ -267,7 +266,6 @@ struct SettingsWindow: View {
                             }
                         }
                         .onChange(of: selectedBaiduModel) { _, newValue in
-                            viewModel.selectedBaiduModel = newValue
                             Task {
                                 await LLMServiceFactory.shared.setBaiduQianfanModel(newValue)
                             }
@@ -373,7 +371,7 @@ struct SettingsWindow: View {
                                 Spacer()
                                 
                                 Button("验证") {
-                                    viewModel.validateBaiduqianfanKey()
+                                    viewModel.validateBaiduqianfanKey(model: selectedBaiduModel)
                                 }
                                 .disabled(viewModel.isValidating)
                                 

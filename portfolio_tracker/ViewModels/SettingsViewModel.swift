@@ -51,12 +51,6 @@ final class SettingsViewModel {
     /// Validation status for SerpAPI
     var serpAPIStatus: ValidationStatus = .unknown
     
-    /// Selected LLM provider
-    var selectedProvider: LLMProvider = .baiduqianfan
-    
-    /// Selected Baidu Qianfan model
-    var selectedBaiduModel: BaiduQianfanService.Model = .kimi_k2_5
-    
     /// Whether validation is in progress
     var isValidating = false
     
@@ -124,10 +118,6 @@ final class SettingsViewModel {
         kimiStatus = isKimiConfigured ? .valid : .unknown
         baiduqianfanStatus = isBaiduqianfanConfigured ? .valid : .unknown
         serpAPIStatus = isSerpAPIConfigured ? .valid : .unknown
-        
-        // Sync @AppStorage values to LLMServiceFactory
-        await LLMServiceFactory.shared.setProvider(selectedProvider)
-        await LLMServiceFactory.shared.setBaiduQianfanModel(selectedBaiduModel)
         
         logger.info("API key status loaded - AlphaVantage: \(self.isAlphaVantageConfigured), Kimi: \(self.isKimiConfigured), Baidu Qianfan: \(self.isBaiduqianfanConfigured), SerpAPI: \(self.isSerpAPIConfigured)")
     }
@@ -373,7 +363,8 @@ final class SettingsViewModel {
     }
     
     /// Validates Baidu Qianfan API key by making a test request
-    func validateBaiduqianfanKey() {
+    /// - Parameter model: The model to use for validation
+    func validateBaiduqianfanKey(model: BaiduQianfanService.Model) {
         guard isBaiduqianfanConfigured else {
             showError(message: "No Baidu Qianfan API key configured")
             return
@@ -384,7 +375,7 @@ final class SettingsViewModel {
         
         Task {
             let apiKeyManager = APIKeyManager.shared
-            let baiduService = BaiduQianfanService(apiKeyManager: apiKeyManager, model: selectedBaiduModel)
+            let baiduService = BaiduQianfanService(apiKeyManager: apiKeyManager, model: model)
             
             let result = await baiduService.validateAPIKey()
             
