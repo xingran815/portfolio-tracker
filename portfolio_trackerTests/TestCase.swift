@@ -54,9 +54,9 @@ class TestCase: XCTestCase {
         return KimiService(apiKeyManager: testAPIKeyManager)
     }
     
-    /// Creates a test TavilyService with test storage
-    func createTestTavilyService() -> TavilyService {
-        return TavilyService(apiKeyManager: testAPIKeyManager)
+    /// Creates a test SerpAPIService with test storage
+    func createTestSerpAPIService() -> SerpAPIService {
+        return SerpAPIService(apiKeyManager: testAPIKeyManager)
     }
     
     /// Creates a test conversation context with optional portfolio data

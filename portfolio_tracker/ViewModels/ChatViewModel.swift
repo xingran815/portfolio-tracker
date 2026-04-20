@@ -71,7 +71,7 @@ final class ChatViewModel {
             case .kimi:
                 return true
             case .baiduqianfan:
-                return await TavilyService.shared.isConfigured()
+                return await SerpAPIService.shared.isConfigured()
             }
         }
     }

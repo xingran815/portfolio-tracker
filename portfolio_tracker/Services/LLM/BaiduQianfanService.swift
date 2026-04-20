@@ -24,12 +24,12 @@ actor BaiduQianfanService: LLMServiceProtocol {
     private let configuration: LLMConfiguration
     private let urlSession: URLSession
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "BaiduQianfanService")
-    private let tavilyService = TavilyService.shared
+    private let webSearchService = SerpAPIService.shared
     
     /// Base URL for Baidu Qianfan API
     private let baseURL = "https://qianfan.baidubce.com/v2/coding"
     
-    /// Whether this service supports web search (via Tavily)
+    /// Whether this service supports web search (via SerpAPI)
     nonisolated let supportsWebSearch: Bool = true
     
     /// Available models
@@ -122,7 +122,7 @@ actor BaiduQianfanService: LLMServiceProtocol {
                     if enableWebSearch {
                         do {
                             let searchQuery = extractSearchQuery(from: message)
-                            let searchResult = try await tavilyService.search(query: searchQuery)
+                            let searchResult = try await webSearchService.search(query: searchQuery)
                             webSearchContext = searchResult.toSystemPromptContext()
                             logger.info("Web search completed with \(searchResult.results.count) results")
                         } catch {

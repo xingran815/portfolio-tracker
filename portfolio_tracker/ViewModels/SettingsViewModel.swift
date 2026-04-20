@@ -24,8 +24,8 @@ final class SettingsViewModel {
     /// Baidu Qianfan API key input
     var baiduqianfanKeyInput = ""
     
-    /// Tavily API key input
-    var tavilyKeyInput = ""
+    /// SerpAPI API key input
+    var serpAPIKeyInput = ""
     
     /// Whether Alpha Vantage key is configured
     var isAlphaVantageConfigured = false
@@ -36,8 +36,8 @@ final class SettingsViewModel {
     /// Whether Baidu Qianfan API key is configured
     var isBaiduqianfanConfigured = false
     
-    /// Whether Tavily API key is configured
-    var isTavilyConfigured = false
+    /// Whether SerpAPI API key is configured
+    var isSerpAPIConfigured = false
     
     /// Validation status for Alpha Vantage
     var alphaVantageStatus: ValidationStatus = .unknown
@@ -48,8 +48,8 @@ final class SettingsViewModel {
     /// Validation status for Baidu Qianfan
     var baiduqianfanStatus: ValidationStatus = .unknown
     
-    /// Validation status for Tavily
-    var tavilyStatus: ValidationStatus = .unknown
+    /// Validation status for SerpAPI
+    var serpAPIStatus: ValidationStatus = .unknown
     
     /// Selected LLM provider
     var selectedProvider: LLMProvider = .baiduqianfan
@@ -118,18 +118,18 @@ final class SettingsViewModel {
         isAlphaVantageConfigured = await apiKeyManager.hasKey(for: .alphaVantage)
         isKimiConfigured = await apiKeyManager.hasKey(for: .kimi)
         isBaiduqianfanConfigured = await apiKeyManager.hasKey(for: .baiduqianfan)
-        isTavilyConfigured = await apiKeyManager.hasKey(for: .tavily)
+        isSerpAPIConfigured = await apiKeyManager.hasKey(for: .serpAPI)
         
         alphaVantageStatus = isAlphaVantageConfigured ? .valid : .unknown
         kimiStatus = isKimiConfigured ? .valid : .unknown
         baiduqianfanStatus = isBaiduqianfanConfigured ? .valid : .unknown
-        tavilyStatus = isTavilyConfigured ? .valid : .unknown
+        serpAPIStatus = isSerpAPIConfigured ? .valid : .unknown
         
         // Load provider preference
         selectedProvider = await LLMServiceFactory.shared.getProvider()
         selectedBaiduModel = await LLMServiceFactory.shared.getBaiduQianfanModel()
         
-        logger.info("API key status loaded - AlphaVantage: \(self.isAlphaVantageConfigured), Kimi: \(self.isKimiConfigured), Baidu Qianfan: \(self.isBaiduqianfanConfigured), Tavily: \(self.isTavilyConfigured)")
+        logger.info("API key status loaded - AlphaVantage: \(self.isAlphaVantageConfigured), Kimi: \(self.isKimiConfigured), Baidu Qianfan: \(self.isBaiduqianfanConfigured), SerpAPI: \(self.isSerpAPIConfigured)")
     }
     
     /// Saves Alpha Vantage API key
@@ -423,11 +423,11 @@ final class SettingsViewModel {
         }
     }
     
-    // MARK: - Tavily API Key Management
+    // MARK: - SerpAPI API Key Management
     
-    /// Saves Tavily API key to keychain
-    func saveTavilyKey() {
-        let key = tavilyKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Saves SerpAPI API key to keychain
+    func saveSerpAPIKey() {
+        let key = serpAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         
         guard !key.isEmpty else {
             showError(message: "Please enter a valid API key")
@@ -435,19 +435,19 @@ final class SettingsViewModel {
         }
         
         Task {
-            guard await apiKeyManager.isValidKeyFormat(key, for: .tavily) else {
+            guard await apiKeyManager.isValidKeyFormat(key, for: .serpAPI) else {
                 await MainActor.run {
-                    showError(message: "Invalid API key format. Tavily keys should start with 'tvly-'")
+                    showError(message: "Invalid API key format. SerpAPI keys should start with 'tvly-'")
                 }
                 return
             }
             
             do {
-                try await apiKeyManager.saveKey(key, for: .tavily)
-                isTavilyConfigured = true
-                tavilyStatus = .valid
-                tavilyKeyInput = ""
-                showSuccess(message: "Tavily API key saved successfully!")
+                try await apiKeyManager.saveKey(key, for: .serpAPI)
+                isSerpAPIConfigured = true
+                serpAPIStatus = .valid
+                serpAPIKeyInput = ""
+                showSuccess(message: "SerpAPI API key saved successfully!")
             } catch {
                 await MainActor.run {
                     showError(message: "Failed to save API key: \(error.localizedDescription)")
@@ -456,16 +456,16 @@ final class SettingsViewModel {
         }
     }
     
-    /// Deletes Tavily API key from keychain
-    func deleteTavilyKey() {
+    /// Deletes SerpAPI API key from keychain
+    func deleteSerpAPIKey() {
         Task {
             do {
-                try await APIKeyManager.shared.deleteKey(for: .tavily)
+                try await APIKeyManager.shared.deleteKey(for: .serpAPI)
                 
                 await MainActor.run {
-                    isTavilyConfigured = false
-                    tavilyStatus = .unknown
-                    showSuccess(message: "Tavily API key removed")
+                    isSerpAPIConfigured = false
+                    serpAPIStatus = .unknown
+                    showSuccess(message: "SerpAPI API key removed")
                 }
             } catch {
                 await MainActor.run {
@@ -475,42 +475,42 @@ final class SettingsViewModel {
         }
     }
     
-    /// Validates Tavily API key by making a test request (uses 1 credit)
-    func validateTavilyKey() {
-        guard isTavilyConfigured else {
-            showError(message: "No Tavily API key configured")
+    /// Validates SerpAPI API key by making a test request (uses 1 credit)
+    func validateSerpAPIKey() {
+        guard isSerpAPIConfigured else {
+            showError(message: "No SerpAPI API key configured")
             return
         }
         
-        tavilyStatus = .validating
+        serpAPIStatus = .validating
         isValidating = true
         
         Task {
             // Use full validation with search (only when user explicitly validates)
-            let result = await TavilyService.shared.validateAPIKeyWithSearch()
+            let result = await SerpAPIService.shared.validateAPIKeyWithSearch()
             
             await MainActor.run {
                 isValidating = false
                 
                 switch result {
                 case .valid:
-                    tavilyStatus = .valid
-                    showSuccess(message: "Tavily API key is valid and working!")
+                    serpAPIStatus = .valid
+                    showSuccess(message: "SerpAPI API key is valid and working!")
                 case .notConfigured:
-                    tavilyStatus = .invalid("Not configured")
+                    serpAPIStatus = .invalid("Not configured")
                     showError(message: "API key not found in keychain")
                 case .invalid:
-                    tavilyStatus = .invalid("Invalid")
+                    serpAPIStatus = .invalid("Invalid")
                     showError(message: "Invalid API key. Check format (should start with 'tvly-')")
                 case .networkError(let message):
-                    tavilyStatus = .invalid("Network error")
+                    serpAPIStatus = .invalid("Network error")
                     showError(message: "Network error: \(message)")
                 case .rateLimited:
-                    tavilyStatus = .invalid("Rate limited")
+                    serpAPIStatus = .invalid("Rate limited")
                     showError(message: "Rate limit exceeded. Try again later.")
                 case .serviceUnavailable:
-                    tavilyStatus = .invalid("Unavailable")
-                    showError(message: "Tavily service temporarily unavailable")
+                    serpAPIStatus = .invalid("Unavailable")
+                    showError(message: "SerpAPI service temporarily unavailable")
                 }
             }
         }

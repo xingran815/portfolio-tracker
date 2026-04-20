@@ -14,14 +14,14 @@ enum APIService: String, CaseIterable, Sendable {
     case alphaVantage = "com.portfolio_tracker.alphavantage"
     case kimi = "com.portfolio_tracker.kimi"
     case baiduqianfan = "com.portfolio_tracker.baiduqianfan"
-    case tavily = "com.portfolio_tracker.tavily"
+    case serpAPI = "com.portfolio_tracker.serpapi"
     
     var displayName: String {
         switch self {
         case .alphaVantage: return "Alpha Vantage"
         case .kimi: return "Kimi API"
         case .baiduqianfan: return "Baidu Qianfan"
-        case .tavily: return "Tavily (Web Search)"
+        case .serpAPI: return "SerpAPI (Web Search)"
         }
     }
     
@@ -30,7 +30,7 @@ enum APIService: String, CaseIterable, Sendable {
         case .alphaVantage: return "https://www.alphavantage.co/support/#api-key"
         case .kimi: return "https://platform.moonshot.cn/docs/api-keys"
         case .baiduqianfan: return "https://console.bce.baidu.com/qianfan/resource/subscribe"
-        case .tavily: return "https://app.tavily.com"
+        case .serpAPI: return "https://serpapi.com"
         }
     }
     
@@ -159,8 +159,8 @@ actor APIKeyManager {
             return key.hasPrefix("sk-") && key.count > 20
         case .baiduqianfan:
             return key.hasPrefix("bce-") && key.count > 20
-        case .tavily:
-            return key.hasPrefix("tvly-") && key.count > 10
+        case .serpAPI:
+            return key.count >= 30
         }
     }
 }
@@ -176,7 +176,7 @@ extension APIKeyManager {
             let manager = APIKeyManager(storage: storage)
             try? await manager.saveKey("demo-alphavantage-key", for: .alphaVantage)
             try? await manager.saveKey("sk-demo-kimi-key-for-preview-only", for: .kimi)
-            try? await manager.saveKey("tvly-demo-key-for-preview", for: .tavily)
+            try? await manager.saveKey("demo-serpapi-key-for-preview-only-1234567890", for: .serpAPI)
             return manager
         }
     }
