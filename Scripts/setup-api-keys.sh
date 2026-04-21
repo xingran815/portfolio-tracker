@@ -75,6 +75,20 @@ else
     echo "⚠️  KIMI_API_KEY not set in .env.local (optional)"
 fi
 
+# Store Baidu Qianfan key
+if [ -n "$BAIDUQIANFAN_API_KEY" ] && [ "$BAIDUQIANFAN_API_KEY" != "your_key_here" ]; then
+    store_key "com.portfolio_tracker.apikeys" "$BAIDUQIANFAN_API_KEY" "com.portfolio_tracker.baiduqianfan"
+else
+    echo "⚠️  BAIDUQIANFAN_API_KEY not set in .env.local (optional)"
+fi
+
+# Store Tavily key
+if [ -n "$TAVILY_API_KEY" ] && [ "$TAVILY_API_KEY" != "your_key_here" ]; then
+    store_key "com.portfolio_tracker.apikeys" "$TAVILY_API_KEY" "com.portfolio_tracker.tavily"
+else
+    echo "⚠️  TAVILY_API_KEY not set in .env.local (optional, for web search)"
+fi
+
 echo ""
 echo "✅ Setup complete!"
 echo ""

@@ -123,6 +123,103 @@ SwiftUI → ViewModels → Services → CoreData
 
 See [GitHub Issues](https://github.com/xingran815/portfolio-tracker/issues) for detailed phase breakdown.
 
+## Testing
+
+### Test Architecture
+
+The project uses a **two-tier testing strategy**:
+
+1. **Unit Tests** (fast, isolated)
+   - Use in-memory storage (no keychain access)
+   - Hermetic and parallel-safe
+   - Inherit from `TestCase` base class
+
+2. **Integration Tests** (slow, require API keys)
+   - Use real keychain and API endpoints
+   - Auto-skip if keys not configured
+   - Inherit from `IntegrationTestCase` base class
+
+### Storage Abstraction
+
+```
+APIKeyStorage (protocol)
+    ├── KeychainStorage (production)
+    └── InMemoryStorage (testing)
+         ↑
+    APIKeyManager
+```
+
+### Running Tests
+
+**All tests:**
+```bash
+xcodebuild test -scheme portfolio_tracker -destination 'platform=macOS'
+```
+
+**Unit tests only** (fast):
+```bash
+xcodebuild test -scheme portfolio_tracker -destination 'platform=macOS' \
+  -only-testing:portfolio_trackerTests/TavilyServiceTests \
+  -only-testing:portfolio_trackerTests/BaiduQianfanServiceTests
+```
+
+**Integration tests** (require API keys):
+```bash
+xcodebuild test -scheme portfolio_tracker -destination 'platform=macOS' \
+  -only-testing:portfolio_trackerTests/TavilyServiceIntegrationTests \
+  -only-testing:portfolio_trackerTests/BaiduQianfanServiceIntegrationTests
+```
+
+### Writing Tests
+
+**Unit Tests** (no API keys needed):
+```swift
+import XCTest
+@testable import portfolio_tracker
+
+final class MyServiceTests: TestCase {
+    var service: MyService!
+    
+    override func setUp() async throws {
+        try await super.setUp()
+        service = createTestMyService()  // Uses test storage
+    }
+    
+    func testSomething() async throws {
+        // Save test key (in-memory, not real keychain!)
+        try await saveTestAPIKey("test-key", for: .baiduqianfan)
+        
+        // Test logic here...
+        
+        // No cleanup needed - storage is discarded after test
+    }
+}
+```
+
+**Integration Tests** (require API keys):
+```swift
+import XCTest
+@testable import portfolio_tracker
+
+final class MyServiceIntegrationTests: IntegrationTestCase {
+    func testRealAPI() async throws {
+        // Skip if key not configured
+        try await skipIfMissingKey(.baiduqianfan)
+        
+        // Test with real API...
+    }
+}
+```
+
+### Test Storage Features
+
+- ✅ **Isolated** - Each test gets fresh storage
+- ✅ **Hermetic** - No shared mutable state
+- ✅ **Fast** - In-memory, no keychain I/O
+- ✅ **Parallel-safe** - Multiple tests run concurrently
+- ✅ **Auto-cleanup** - Storage discarded after each test
+- ✅ **No pollution** - Test keys never touch production keychain
+
 ## Contributing
 
 1. Fork the repository

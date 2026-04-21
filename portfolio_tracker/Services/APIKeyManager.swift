@@ -14,12 +14,14 @@ enum APIService: String, CaseIterable, Sendable {
     case alphaVantage = "com.portfolio_tracker.alphavantage"
     case kimi = "com.portfolio_tracker.kimi"
     case baiduqianfan = "com.portfolio_tracker.baiduqianfan"
+    case serpAPI = "com.portfolio_tracker.serpapi"
     
     var displayName: String {
         switch self {
         case .alphaVantage: return "Alpha Vantage"
         case .kimi: return "Kimi API"
         case .baiduqianfan: return "Baidu Qianfan"
+        case .serpAPI: return "SerpAPI (Web Search)"
         }
     }
     
@@ -28,6 +30,7 @@ enum APIService: String, CaseIterable, Sendable {
         case .alphaVantage: return "https://www.alphavantage.co/support/#api-key"
         case .kimi: return "https://platform.moonshot.cn/docs/api-keys"
         case .baiduqianfan: return "https://console.bce.baidu.com/qianfan/resource/subscribe"
+        case .serpAPI: return "https://serpapi.com"
         }
     }
     
@@ -57,11 +60,11 @@ enum APIKeyError: LocalizedError {
     }
 }
 
-/// Manages secure storage of API keys in macOS Keychain
+/// Manages secure storage of API keys
 ///
 /// Usage:
 /// ```swift
-/// // Save API key
+/// // Save API key (production)
 /// try await APIKeyManager.shared.saveKey("your-api-key", for: .alphaVantage)
 ///
 /// // Retrieve API key
@@ -72,123 +75,65 @@ enum APIKeyError: LocalizedError {
 ///
 /// // Check if key exists
 /// let exists = await APIKeyManager.shared.hasKey(for: .alphaVantage)
+///
+/// // For testing with in-memory storage
+/// let testStorage = InMemoryStorage()
+/// let testManager = APIKeyManager(storage: testStorage)
 /// ```
 actor APIKeyManager {
     
     // MARK: - Properties
     
-    /// Shared singleton instance
-    static let shared = APIKeyManager()
+    /// Shared singleton instance (uses keychain storage)
+    static let shared = APIKeyManager(storage: KeychainStorage())
+    
+    /// Storage backend (keychain for production, in-memory for testing)
+    private let storage: any APIKeyStorage
     
     /// Logger for debugging
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "APIKeyManager")
     
-    /// Service name for keychain items
-    private let service = "com.portfolio_tracker.apikeys"
-    
     // MARK: - Initialization
     
-    private init() {}
+    /// Initialize with custom storage (for testing)
+    /// - Parameter storage: Storage backend to use
+    init(storage: any APIKeyStorage) {
+        self.storage = storage
+    }
     
     // MARK: - Public Methods
     
-    /// Saves an API key to the keychain
+    /// Saves an API key
     /// - Parameters:
     ///   - key: The API key to store
     ///   - serviceType: The service this key belongs to
     /// - Throws: APIKeyError if save fails
     func saveKey(_ key: String, for serviceType: APIService) async throws {
-        guard let keyData = key.data(using: .utf8) else {
-            logger.error("Failed to encode key data for \(serviceType.displayName)")
-            throw APIKeyError.invalidKeyData
-        }
-        
-        // Delete existing key first (to avoid duplicates)
-        try? await deleteKey(for: serviceType)
-        
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: serviceType.rawValue,
-            kSecValueData as String: keyData,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        ]
-        
-        let status = SecItemAdd(query as CFDictionary, nil)
-        
-        guard status == errSecSuccess else {
-            logger.error("Failed to save key for \(serviceType.displayName): \(status)")
-            throw APIKeyError.invalidStatus(status)
-        }
-        
-        logger.info("Successfully saved API key for \(serviceType.displayName)")
+        try await storage.save(key, for: serviceType)
+        logger.info("Saved API key for \(serviceType.displayName)")
     }
     
-    /// Retrieves an API key from the keychain
+    /// Retrieves an API key
     /// - Parameter serviceType: The service to get the key for
     /// - Returns: The stored API key
     /// - Throws: APIKeyError if retrieval fails
     func getKey(for serviceType: APIService) async throws -> String {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: serviceType.rawValue,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        
-        guard status == errSecSuccess else {
-            if status == errSecItemNotFound {
-                logger.warning("API key not found for \(serviceType.displayName)")
-                throw APIKeyError.itemNotFound
-            }
-            logger.error("Failed to retrieve key for \(serviceType.displayName): \(status)")
-            throw APIKeyError.invalidStatus(status)
-        }
-        
-        guard let keyData = result as? Data,
-              let key = String(data: keyData, encoding: .utf8) else {
-            logger.error("Failed to decode key data for \(serviceType.displayName)")
-            throw APIKeyError.invalidKeyData
-        }
-        
-        return key
+        return try await storage.get(for: serviceType)
     }
     
-    /// Deletes an API key from the keychain
+    /// Deletes an API key
     /// - Parameter serviceType: The service to delete the key for
     /// - Throws: APIKeyError if deletion fails
     func deleteKey(for serviceType: APIService) async throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: serviceType.rawValue
-        ]
-        
-        let status = SecItemDelete(query as CFDictionary)
-        
-        // errSecItemNotFound is acceptable (key didn't exist)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            logger.error("Failed to delete key for \(serviceType.displayName): \(status)")
-            throw APIKeyError.invalidStatus(status)
-        }
-        
-        logger.info("Successfully deleted API key for \(serviceType.displayName)")
+        try await storage.delete(for: serviceType)
+        logger.info("Deleted API key for \(serviceType.displayName)")
     }
     
-    /// Checks if an API key exists in the keychain
+    /// Checks if an API key exists
     /// - Parameter serviceType: The service to check
     /// - Returns: True if a key exists
     func hasKey(for serviceType: APIService) async -> Bool {
-        do {
-            _ = try await getKey(for: serviceType)
-            return true
-        } catch {
-            return false
-        }
+        return await storage.exists(for: serviceType)
     }
     
     /// Gets configuration status for all services
@@ -214,6 +159,8 @@ actor APIKeyManager {
             return key.hasPrefix("sk-") && key.count > 20
         case .baiduqianfan:
             return key.hasPrefix("bce-") && key.count > 20
+        case .serpAPI:
+            return key.count >= 30
         }
     }
 }
@@ -225,10 +172,11 @@ extension APIKeyManager {
     /// Mock API key manager for previews and testing
     static var preview: APIKeyManager {
         get async {
-            let manager = APIKeyManager()
-            // Pre-populate with fake keys for previews
+            let storage = InMemoryStorage()
+            let manager = APIKeyManager(storage: storage)
             try? await manager.saveKey("demo-alphavantage-key", for: .alphaVantage)
             try? await manager.saveKey("sk-demo-kimi-key-for-preview-only", for: .kimi)
+            try? await manager.saveKey("demo-serpapi-key-for-preview-only-1234567890", for: .serpAPI)
             return manager
         }
     }

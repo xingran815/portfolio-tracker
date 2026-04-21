@@ -24,6 +24,9 @@ actor KimiService: LLMServiceProtocol {
     private let urlSession: URLSession
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "KimiService")
     
+    /// Whether this service supports web search (native Kimi $web_search)
+    nonisolated let supportsWebSearch: Bool = true
+    
     /// API Endpoint options
     enum APIEndpoint: String, Sendable {
         case moonshot = "https://api.moonshot.cn/v1"       // platform.moonshot.cn
@@ -78,7 +81,8 @@ actor KimiService: LLMServiceProtocol {
     func sendMessage(
         _ message: String,
         context: ConversationContext,
-        history: [ChatMessage]
+        history: [ChatMessage],
+        enableWebSearch: Bool = false
     ) -> AsyncStream<Result<String, LLMServiceError>> {
         AsyncStream { continuation in
             let task = Task {
@@ -88,37 +92,25 @@ actor KimiService: LLMServiceProtocol {
                         throw LLMServiceError.apiKeyMissing
                     }
                     
-                    // Build request
-                    let request = try buildRequest(
-                        message: message,
-                        context: context,
-                        history: history,
-                        apiKey: apiKey
-                    )
-                    
-                    logger.info("Sending message to Kimi API")
-                    
-                    // Perform request with retry logic
-                    let (bytes, response) = try await performRequestWithRetry(request: request)
-                    
-                    // Check HTTP response
-                    try validateResponse(response)
-                    
-                    // Parse SSE stream
-                    for try await line in bytes.lines {
-                        // Check for cancellation
-                        if Task.isCancelled {
-                            throw LLMServiceError.cancelled
-                        }
-                        
-                        // Parse SSE line
-                        if let content = parseSSELine(line) {
-                            continuation.yield(.success(content))
-                        }
+                    if enableWebSearch {
+                        // Use Kimi's native $web_search tool with full tool_calls flow
+                        try await sendMessageWithWebSearch(
+                            message: message,
+                            context: context,
+                            history: history,
+                            apiKey: apiKey,
+                            continuation: continuation
+                        )
+                    } else {
+                        // Normal message without web search
+                        try await sendMessageNormal(
+                            message: message,
+                            context: context,
+                            history: history,
+                            apiKey: apiKey,
+                            continuation: continuation
+                        )
                     }
-                    
-                    logger.info("Streaming completed")
-                    continuation.finish()
                     
                 } catch let error as LLMServiceError {
                     logger.error("[Kimi] LLM error: \(error.localizedDescription)")
@@ -126,8 +118,7 @@ actor KimiService: LLMServiceProtocol {
                     continuation.finish()
                 } catch {
                     logger.error("[Kimi] Unexpected error: \(error.localizedDescription)")
-                    let wrappedError = LLMServiceError.networkError(error.localizedDescription)
-                    continuation.yield(.failure(wrappedError))
+                    continuation.yield(.failure(.networkError(error.localizedDescription)))
                     continuation.finish()
                 }
             }
@@ -137,6 +128,131 @@ actor KimiService: LLMServiceProtocol {
                 task.cancel()
             }
         }
+    }
+    
+    /// Normal message without web search
+    private func sendMessageNormal(
+        message: String,
+        context: ConversationContext,
+        history: [ChatMessage],
+        apiKey: String,
+        continuation: AsyncStream<Result<String, LLMServiceError>>.Continuation
+    ) async throws {
+        let request = try buildRequest(
+            message: message,
+            context: context,
+            history: history,
+            apiKey: apiKey,
+            enableWebSearch: false
+        )
+        
+        logger.info("Sending message to Kimi API (webSearch: false)")
+        
+        let (bytes, response) = try await performRequestWithRetry(request: request)
+        try validateResponse(response)
+        
+        for try await line in bytes.lines {
+            if Task.isCancelled { throw LLMServiceError.cancelled }
+            if let content = parseSSELine(line) {
+                continuation.yield(.success(content))
+            }
+        }
+        
+        logger.info("Streaming completed")
+        continuation.finish()
+    }
+    
+    /// Message with Kimi's native $web_search tool
+    private func sendMessageWithWebSearch(
+        message: String,
+        context: ConversationContext,
+        history: [ChatMessage],
+        apiKey: String,
+        continuation: AsyncStream<Result<String, LLMServiceError>>.Continuation
+    ) async throws {
+        logger.info("Sending message to Kimi API with web search tool")
+        
+        // Build initial messages
+        var messages = buildMessages(message: message, context: context, history: history)
+        
+        // Step 1: Send request with tool enabled
+        let requestBody = buildRequestBodyWithTools(messages: messages, enableWebSearch: true)
+        var request = try buildRequestFromParts(apiKey: apiKey, body: requestBody)
+        
+        let (bytes, response) = try await performRequestWithRetry(request: request)
+        try validateResponse(response)
+        
+        var toolCalls: [[String: Any]] = []
+        var accumulatedContent = ""
+        var hasToolCalls = false
+        
+        // Step 2: Parse initial response stream
+        for try await line in bytes.lines {
+            if Task.isCancelled { throw LLMServiceError.cancelled }
+            
+            let parsed = parseSSELineWithToolCalls(line)
+            
+            if let content = parsed.content {
+                accumulatedContent += content
+                continuation.yield(.success(content))
+            }
+            
+            if let tc = parsed.toolCalls {
+                toolCalls.append(contentsOf: tc)
+            }
+            
+            if let finishReason = parsed.finishReason, finishReason == "tool_calls" {
+                hasToolCalls = true
+                break
+            }
+        }
+        
+        // Step 3: If tool calls detected, send tool response and continue
+        if hasToolCalls && !toolCalls.isEmpty {
+            logger.info("Kimi requested tool calls, sending tool response")
+            
+            // Add assistant message with tool calls
+            var assistantMessage: [String: Any] = ["role": "assistant"]
+            if !accumulatedContent.isEmpty {
+                assistantMessage["content"] = accumulatedContent
+            }
+            assistantMessage["tool_calls"] = toolCalls
+            messages.append(assistantMessage)
+            
+            // Add tool response for each tool call
+            for toolCall in toolCalls {
+                guard let toolCallId = toolCall["id"] as? String,
+                      let function = toolCall["function"] as? [String: Any],
+                      let arguments = function["arguments"] as? String else {
+                    continue
+                }
+                
+                // For $web_search, the arguments contain the search results from Kimi
+                messages.append([
+                    "role": "tool",
+                    "tool_call_id": toolCallId,
+                    "content": arguments
+                ])
+            }
+            
+            // Step 4: Continue conversation with tool results
+            let followUpBody = buildRequestBody(messages: messages, enableWebSearch: false)
+            let followUpRequest = try buildRequestFromParts(apiKey: apiKey, body: followUpBody)
+            
+            let (followUpBytes, followUpResponse) = try await performRequestWithRetry(request: followUpRequest)
+            try validateResponse(followUpResponse)
+            
+            // Stream final response
+            for try await followUpLine in followUpBytes.lines {
+                if Task.isCancelled { throw LLMServiceError.cancelled }
+                if let content = parseSSELine(followUpLine) {
+                    continuation.yield(.success(content))
+                }
+            }
+        }
+        
+        logger.info("Streaming completed with web search")
+        continuation.finish()
     }
     
     func validateAPIKey() async -> APIKeyValidationResult {
@@ -163,7 +279,8 @@ actor KimiService: LLMServiceProtocol {
                     maxDrawdown: nil,
                     exchangeRates: nil
                 ),
-                history: []
+                history: [],
+                enableWebSearch: false
             )
             
             var receivedContent = false
@@ -251,14 +368,18 @@ actor KimiService: LLMServiceProtocol {
         message: String,
         context: ConversationContext,
         history: [ChatMessage],
-        apiKey: String
+        apiKey: String,
+        enableWebSearch: Bool = false
     ) throws -> URLRequest {
+        let messages = buildMessages(message: message, context: context, history: history)
+        let requestBody = buildRequestBodyWithTools(messages: messages, enableWebSearch: enableWebSearch)
+        return try buildRequestFromParts(apiKey: apiKey, body: requestBody)
+    }
+    
+    private func buildRequestFromParts(apiKey: String, body: [String: Any]) throws -> URLRequest {
         guard let url = buildURL() else {
             throw LLMServiceError.invalidResponse(statusCode: nil)
         }
-        
-        let messages = buildMessages(message: message, context: context, history: history)
-        let requestBody = buildRequestBody(messages: messages)
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -268,7 +389,7 @@ actor KimiService: LLMServiceProtocol {
         applyAuthentication(to: &request, apiKey: apiKey)
         applyCustomHeaders(to: &request)
         
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
         return request
     }
@@ -281,8 +402,8 @@ actor KimiService: LLMServiceProtocol {
         message: String,
         context: ConversationContext,
         history: [ChatMessage]
-    ) -> [[String: String]] {
-        var messages: [[String: String]] = []
+    ) -> [[String: Any]] {
+        var messages: [[String: Any]] = []
         
         // Add system prompt
         let systemPrompt = SystemPrompts.basePrompt + SystemPrompts.buildContextString(context: context)
@@ -292,7 +413,7 @@ actor KimiService: LLMServiceProtocol {
         ])
         
         // Add history with character limit
-        var totalLength = messages[0]["content"]?.count ?? 0
+        var totalLength = (messages[0]["content"] as? String)?.count ?? 0
         let limitedHistory = limitHistory(history, maxLength: configuration.maxContextLength - totalLength)
         
         for chatMessage in limitedHistory {
@@ -329,8 +450,8 @@ actor KimiService: LLMServiceProtocol {
         return result
     }
     
-    private func buildRequestBody(messages: [[String: String]]) -> [String: Any] {
-        [
+    private func buildRequestBodyWithTools(messages: [[String: Any]], enableWebSearch: Bool) -> [String: Any] {
+        var body: [String: Any] = [
             "model": resolveModelName(),
             "messages": messages,
             "temperature": configuration.temperature,
@@ -338,6 +459,24 @@ actor KimiService: LLMServiceProtocol {
             "top_p": configuration.topP,
             "stream": true
         ]
+        
+        // Add web search tool if enabled (Kimi native $web_search)
+        if enableWebSearch {
+            body["tools"] = [
+                [
+                    "type": "builtin_function",
+                    "function": [
+                        "name": "$web_search"
+                    ]
+                ]
+            ]
+        }
+        
+        return body
+    }
+    
+    private func buildRequestBody(messages: [[String: Any]], enableWebSearch: Bool) -> [String: Any] {
+        buildRequestBodyWithTools(messages: messages, enableWebSearch: enableWebSearch)
     }
     
     private func resolveModelName() -> String {
@@ -395,32 +534,43 @@ actor KimiService: LLMServiceProtocol {
     
     /// Parses Server-Sent Events (SSE) line
     private func parseSSELine(_ line: String) -> String? {
+        parseSSELineWithToolCalls(line).content
+    }
+    
+    /// Parses SSE line with tool call support
+    private func parseSSELineWithToolCalls(_ line: String) -> (content: String?, toolCalls: [[String: Any]]?, finishReason: String?) {
         // SSE format: data: {...}
         guard line.hasPrefix("data: ") else {
-            return nil
+            return (nil, nil, nil)
         }
         
         let jsonString = String(line.dropFirst(6))
         
         // Check for [DONE]
         if jsonString == "[DONE]" {
-            return nil
+            return (nil, nil, nil)
         }
         
         // Parse JSON
         guard let data = jsonString.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
-              let firstChoice = choices.first,
-              let delta = firstChoice["delta"] as? [String: Any] else {
-            return nil
+              let firstChoice = choices.first else {
+            return (nil, nil, nil)
         }
         
-        // Extract content
-        if let content = delta["content"] as? String {
-            return content
+        let finishReason = firstChoice["finish_reason"] as? String
+        var content: String? = nil
+        var toolCalls: [[String: Any]]? = nil
+        
+        if let delta = firstChoice["delta"] as? [String: Any] {
+            content = delta["content"] as? String
+            
+            if let tc = delta["tool_calls"] as? [[String: Any]] {
+                toolCalls = tc
+            }
         }
         
-        return nil
+        return (content, toolCalls, finishReason)
     }
 }

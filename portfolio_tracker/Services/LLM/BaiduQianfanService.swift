@@ -24,9 +24,13 @@ actor BaiduQianfanService: LLMServiceProtocol {
     private let configuration: LLMConfiguration
     private let urlSession: URLSession
     private let logger = Logger(subsystem: "com.portfolio_tracker", category: "BaiduQianfanService")
+    private let webSearchService = SerpAPIService.shared
     
     /// Base URL for Baidu Qianfan API
     private let baseURL = "https://qianfan.baidubce.com/v2/coding"
+    
+    /// Whether this service supports web search (via SerpAPI)
+    nonisolated let supportsWebSearch: Bool = true
     
     /// Available models
     enum Model: String, Sendable, CaseIterable {
@@ -102,7 +106,8 @@ actor BaiduQianfanService: LLMServiceProtocol {
     func sendMessage(
         _ message: String,
         context: ConversationContext,
-        history: [ChatMessage]
+        history: [ChatMessage],
+        enableWebSearch: Bool = false
     ) -> AsyncStream<Result<String, LLMServiceError>> {
         AsyncStream { continuation in
             let task = Task {
@@ -112,15 +117,29 @@ actor BaiduQianfanService: LLMServiceProtocol {
                         throw LLMServiceError.apiKeyMissing
                     }
                     
+                    // Perform web search if enabled
+                    var webSearchContext: String? = nil
+                    if enableWebSearch {
+                        do {
+                            let searchQuery = extractSearchQuery(from: message)
+                            let searchResult = try await webSearchService.search(query: searchQuery)
+                            webSearchContext = searchResult.toSystemPromptContext()
+                            logger.info("Web search completed with \(searchResult.results.count) results")
+                        } catch {
+                            logger.warning("Web search failed: \(error.localizedDescription)")
+                        }
+                    }
+                    
                     // Build request
                     let request = try buildRequest(
                         message: message,
                         context: context,
                         history: history,
-                        apiKey: apiKey
+                        apiKey: apiKey,
+                        webSearchContext: webSearchContext
                     )
                     
-                    logger.info("Sending message to Baidu Qianfan API (model: \(self.model.rawValue))")
+                    logger.info("Sending message to Baidu Qianfan API (model: \(self.model.rawValue), webSearch: \(enableWebSearch))")
                     
                     // Perform request with retry logic
                     let (bytes, response) = try await performRequestWithRetry(request: request)
@@ -186,7 +205,8 @@ actor BaiduQianfanService: LLMServiceProtocol {
                 maxDrawdown: nil,
                 exchangeRates: nil
             ),
-            history: []
+            history: [],
+            enableWebSearch: false
         )
         
         var hasValidResponse = false
@@ -215,7 +235,8 @@ actor BaiduQianfanService: LLMServiceProtocol {
         message: String,
         context: ConversationContext,
         history: [ChatMessage],
-        apiKey: String
+        apiKey: String,
+        webSearchContext: String? = nil
     ) throws -> URLRequest {
         guard let url = URL(string: "\(baseURL)/chat/completions") else {
             throw LLMServiceError.networkError("Invalid API URL: \(baseURL)/chat/completions")
@@ -227,7 +248,7 @@ actor BaiduQianfanService: LLMServiceProtocol {
         
         let body: [String: Any] = [
             "model": model.rawValue,
-            "messages": buildMessages(message: message, context: context, history: history),
+            "messages": buildMessages(message: message, context: context, history: history, webSearchContext: webSearchContext),
             "temperature": configuration.temperature,
             "max_tokens": configuration.maxTokens,
             "stream": true
@@ -243,12 +264,19 @@ actor BaiduQianfanService: LLMServiceProtocol {
     private func buildMessages(
         message: String,
         context: ConversationContext,
-        history: [ChatMessage]
+        history: [ChatMessage],
+        webSearchContext: String? = nil
     ) -> [[String: Any]] {
         var messages: [[String: Any]] = []
         
         // System message
-        let systemContent = SystemPrompts.buildContextString(context: context)
+        var systemContent = SystemPrompts.basePrompt + SystemPrompts.buildContextString(context: context)
+        
+        // Add web search context if available
+        if let webContext = webSearchContext {
+            systemContent += webContext
+        }
+        
         messages.append(["role": "system", "content": systemContent])
         
         // Calculate available tokens for history
@@ -288,6 +316,48 @@ actor BaiduQianfanService: LLMServiceProtocol {
         // Rough estimation: 4 characters per token on average
         // This works reasonably well for both English and Chinese
         return max(1, text.count / 4)
+    }
+    
+    /// Extracts optimal search query from user message
+    private func extractSearchQuery(from message: String) -> String {
+        // Use short messages as-is
+        if message.count < 100 {
+            return message
+        }
+        
+        // Keywords indicating financial/investment queries
+        let financialKeywords = [
+            "股价", "股票", "基金", "市场", "A股", "港股", "美股", "股价",
+            "stock", "price", "market", "fund", "index", "ETF",
+            "利率", "通胀", "GDP", "美联储", "央行", "降息", "加息",
+            "interest rate", "inflation", "Fed", "central bank",
+            "财报", "盈利", "营收", "earnings", "revenue",
+            "走势", "行情", "趋势", "trend", "forecast"
+        ]
+        
+        // Split into sentences
+        let sentences = message.components(separatedBy: CharacterSet(charactersIn: "。！？.!?\n"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        
+        // Score each sentence by keyword matches
+        var bestSentence = String(message.prefix(100))
+        var bestScore = 0
+        
+        for sentence in sentences {
+            let lowercased = sentence.lowercased()
+            let score = financialKeywords.reduce(0) { count, keyword in
+                count + (lowercased.contains(keyword.lowercased()) ? 1 : 0)
+            }
+            
+            if score > bestScore {
+                bestScore = score
+                bestSentence = sentence
+            }
+        }
+        
+        logger.debug("Extracted search query: '\(bestSentence)' (score: \(bestScore))")
+        return bestSentence
     }
     
     // MARK: - SSE Parsing

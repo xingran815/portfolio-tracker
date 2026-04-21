@@ -24,6 +24,9 @@ final class SettingsViewModel {
     /// Baidu Qianfan API key input
     var baiduqianfanKeyInput = ""
     
+    /// SerpAPI API key input
+    var serpAPIKeyInput = ""
+    
     /// Whether Alpha Vantage key is configured
     var isAlphaVantageConfigured = false
     
@@ -32,6 +35,9 @@ final class SettingsViewModel {
     
     /// Whether Baidu Qianfan API key is configured
     var isBaiduqianfanConfigured = false
+    
+    /// Whether SerpAPI API key is configured
+    var isSerpAPIConfigured = false
     
     /// Validation status for Alpha Vantage
     var alphaVantageStatus: ValidationStatus = .unknown
@@ -42,11 +48,8 @@ final class SettingsViewModel {
     /// Validation status for Baidu Qianfan
     var baiduqianfanStatus: ValidationStatus = .unknown
     
-    /// Selected LLM provider
-    var selectedProvider: LLMProvider = .baiduqianfan
-    
-    /// Selected Baidu Qianfan model
-    var selectedBaiduModel: BaiduQianfanService.Model = .kimi_k2_5
+    /// Validation status for SerpAPI
+    var serpAPIStatus: ValidationStatus = .unknown
     
     /// Whether validation is in progress
     var isValidating = false
@@ -109,16 +112,14 @@ final class SettingsViewModel {
         isAlphaVantageConfigured = await apiKeyManager.hasKey(for: .alphaVantage)
         isKimiConfigured = await apiKeyManager.hasKey(for: .kimi)
         isBaiduqianfanConfigured = await apiKeyManager.hasKey(for: .baiduqianfan)
+        isSerpAPIConfigured = await apiKeyManager.hasKey(for: .serpAPI)
         
         alphaVantageStatus = isAlphaVantageConfigured ? .valid : .unknown
         kimiStatus = isKimiConfigured ? .valid : .unknown
         baiduqianfanStatus = isBaiduqianfanConfigured ? .valid : .unknown
+        serpAPIStatus = isSerpAPIConfigured ? .valid : .unknown
         
-        // Load provider preference
-        selectedProvider = await LLMServiceFactory.shared.getProvider()
-        selectedBaiduModel = await LLMServiceFactory.shared.getBaiduQianfanModel()
-        
-        logger.info("API key status loaded - AlphaVantage: \(self.isAlphaVantageConfigured), Kimi: \(self.isKimiConfigured), Baidu Qianfan: \(self.isBaiduqianfanConfigured)")
+        logger.info("API key status loaded - AlphaVantage: \(self.isAlphaVantageConfigured), Kimi: \(self.isKimiConfigured), Baidu Qianfan: \(self.isBaiduqianfanConfigured), SerpAPI: \(self.isSerpAPIConfigured)")
     }
     
     /// Saves Alpha Vantage API key
@@ -362,7 +363,8 @@ final class SettingsViewModel {
     }
     
     /// Validates Baidu Qianfan API key by making a test request
-    func validateBaiduqianfanKey() {
+    /// - Parameter model: The model to use for validation
+    func validateBaiduqianfanKey(model: BaiduQianfanService.Model) {
         guard isBaiduqianfanConfigured else {
             showError(message: "No Baidu Qianfan API key configured")
             return
@@ -373,7 +375,7 @@ final class SettingsViewModel {
         
         Task {
             let apiKeyManager = APIKeyManager.shared
-            let baiduService = BaiduQianfanService(apiKeyManager: apiKeyManager, model: selectedBaiduModel)
+            let baiduService = BaiduQianfanService(apiKeyManager: apiKeyManager, model: model)
             
             let result = await baiduService.validateAPIKey()
             
@@ -409,6 +411,99 @@ final class SettingsViewModel {
     func openDocumentation(for service: APIService) {
         if let url = URL(string: service.documentationURL) {
             NSWorkspace.shared.open(url)
+        }
+    }
+    
+    // MARK: - SerpAPI API Key Management
+    
+    /// Saves SerpAPI API key to keychain
+    func saveSerpAPIKey() {
+        let key = serpAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !key.isEmpty else {
+            showError(message: "Please enter a valid API key")
+            return
+        }
+        
+        Task {
+            guard await apiKeyManager.isValidKeyFormat(key, for: .serpAPI) else {
+                await MainActor.run {
+                    showError(message: "Invalid API key format. SerpAPI keys should start with 'tvly-'")
+                }
+                return
+            }
+            
+            do {
+                try await apiKeyManager.saveKey(key, for: .serpAPI)
+                isSerpAPIConfigured = true
+                serpAPIStatus = .valid
+                serpAPIKeyInput = ""
+                showSuccess(message: "SerpAPI API key saved successfully!")
+            } catch {
+                await MainActor.run {
+                    showError(message: "Failed to save API key: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    /// Deletes SerpAPI API key from keychain
+    func deleteSerpAPIKey() {
+        Task {
+            do {
+                try await APIKeyManager.shared.deleteKey(for: .serpAPI)
+                
+                await MainActor.run {
+                    isSerpAPIConfigured = false
+                    serpAPIStatus = .unknown
+                    showSuccess(message: "SerpAPI API key removed")
+                }
+            } catch {
+                await MainActor.run {
+                    showError(message: "Failed to remove API key: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    /// Validates SerpAPI API key by making a test request (uses 1 credit)
+    func validateSerpAPIKey() {
+        guard isSerpAPIConfigured else {
+            showError(message: "No SerpAPI API key configured")
+            return
+        }
+        
+        serpAPIStatus = .validating
+        isValidating = true
+        
+        Task {
+            // Use full validation with search (only when user explicitly validates)
+            let result = await SerpAPIService.shared.validateAPIKeyWithSearch()
+            
+            await MainActor.run {
+                isValidating = false
+                
+                switch result {
+                case .valid:
+                    serpAPIStatus = .valid
+                    showSuccess(message: "SerpAPI API key is valid and working!")
+                case .notConfigured:
+                    serpAPIStatus = .invalid("Not configured")
+                    showError(message: "API key not found in keychain")
+                case .invalid:
+                    serpAPIStatus = .invalid("Invalid")
+                    showError(message: "Invalid API key. Check format (should start with 'tvly-')")
+                case .networkError(let message):
+                    serpAPIStatus = .invalid("Network error")
+                    showError(message: "Network error: \(message)")
+                case .rateLimited:
+                    serpAPIStatus = .invalid("Rate limited")
+                    showError(message: "Rate limit exceeded. Try again later.")
+                case .serviceUnavailable:
+                    serpAPIStatus = .invalid("Unavailable")
+                    showError(message: "SerpAPI service temporarily unavailable")
+                }
+            }
         }
     }
     
