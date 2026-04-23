@@ -47,6 +47,11 @@ open portfolio_tracker.xcodeproj
 2. In app: Settings → LLM Provider → Baidu Qianfan
 3. Choose model: kimi-k2.5 (256k), glm-5 (198k), or minimax-m2.5 (192k)
 
+**SerpAPI** (optional, for web search in AI chat):
+1. Get API key at [serpapi.com](https://serpapi.com)
+2. In the app: Settings → API Keys → SerpAPI
+3. Toggle web search in chat when needed for real-time information
+
 **Chinese Funds** (no setup required):
 - Uses 天天基金 API (free, no API key)
 - Automatically fetches fund NAV
@@ -70,9 +75,13 @@ portfolio_tracker/
 │   └── Transaction+Extensions.swift # Transaction business logic
 ├── Services/                       # Business logic
 │   ├── APIKeyManager.swift         # Secure keychain storage
-│   ├── DataProvider/               # Price fetching (Phase 2)
-│   ├── LLM/                        # Chat service (Phase 3)
-│   └── Parser/                     # Markdown parser (Phase 4)
+│   ├── APIKeyStorage.swift         # Storage protocol
+│   ├── InMemoryStorage.swift       # Test storage
+│   ├── KeychainStorage.swift       # Production keychain
+│   ├── DataProvider/               # Price fetching
+│   ├── LLM/                        # Chat services (Kimi, Baidu Qianfan)
+│   ├── WebSearch/                  # SerpAPI integration
+│   └── Parser/                     # Markdown parser
 ├── ViewModels/                     # SwiftUI view models (Phase 6)
 ├── Views/                          # SwiftUI views (Phase 6)
 ├── Utils/                          # Helper utilities
@@ -92,8 +101,9 @@ SwiftUI → ViewModels → Services → CoreData
          │ AlphaVantage API     │ (US/HK stocks)
          │ 天天基金 API          │ (Chinese funds)
          │ Exchange Rate API    │ (Currency conversion)
-          │ Kimi API             │ (LLM advisor option 1)
-          │ Baidu Qianfan API    │ (LLM advisor option 2)
+         │ Kimi API             │ (LLM advisor option 1)
+         │ Baidu Qianfan API    │ (LLM advisor option 2)
+         │ SerpAPI              │ (Web search for AI chat)
          └──────────────────────┘
 ```
 
@@ -159,14 +169,13 @@ xcodebuild test -scheme portfolio_tracker -destination 'platform=macOS'
 **Unit tests only** (fast):
 ```bash
 xcodebuild test -scheme portfolio_tracker -destination 'platform=macOS' \
-  -only-testing:portfolio_trackerTests/TavilyServiceTests \
-  -only-testing:portfolio_trackerTests/BaiduQianfanServiceTests
+  -only-testing:portfolio_trackerTests/BaiduQianfanServiceTests \
+  -only-testing:portfolio_trackerTests/LLMServiceFactoryTests
 ```
 
 **Integration tests** (require API keys):
 ```bash
 xcodebuild test -scheme portfolio_tracker -destination 'platform=macOS' \
-  -only-testing:portfolio_trackerTests/TavilyServiceIntegrationTests \
   -only-testing:portfolio_trackerTests/BaiduQianfanServiceIntegrationTests
 ```
 
