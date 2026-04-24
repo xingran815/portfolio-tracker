@@ -44,7 +44,10 @@ struct ConversationContext: Sendable {
     let expectedReturn: Double?
     let maxDrawdown: Double?
     let exchangeRates: [String: Double]?
-    
+    /// Non-fatal warnings produced while assembling this context
+    /// (e.g. "exchange rate fetch failed") — surfaced to the LLM so it can caveat.
+    let contextWarnings: [String]?
+
     struct PositionSummary: Sendable {
         let symbol: String
         let name: String
@@ -58,6 +61,36 @@ struct ConversationContext: Sendable {
         let assetType: String
         let market: String
         let currency: String
+    }
+
+    init(
+        portfolioName: String?,
+        positions: [PositionSummary],
+        riskProfile: String?,
+        targetAllocation: [String: Double]?,
+        totalValue: Double?,
+        totalCost: Double?,
+        totalProfitLoss: Double?,
+        profitLossPercentage: Double?,
+        portfolioCurrency: String?,
+        expectedReturn: Double?,
+        maxDrawdown: Double?,
+        exchangeRates: [String: Double]?,
+        contextWarnings: [String]? = nil
+    ) {
+        self.portfolioName = portfolioName
+        self.positions = positions
+        self.riskProfile = riskProfile
+        self.targetAllocation = targetAllocation
+        self.totalValue = totalValue
+        self.totalCost = totalCost
+        self.totalProfitLoss = totalProfitLoss
+        self.profitLossPercentage = profitLossPercentage
+        self.portfolioCurrency = portfolioCurrency
+        self.expectedReturn = expectedReturn
+        self.maxDrawdown = maxDrawdown
+        self.exchangeRates = exchangeRates
+        self.contextWarnings = contextWarnings
     }
 }
 
@@ -93,30 +126,30 @@ enum LLMServiceError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .apiKeyMissing:
-            return "API key not configured. Please add your API key in Settings."
+            return "API 密钥未配置，请在设置中添加 (API key not configured)"
         case .invalidAPIKey:
-            return "Invalid API key. Please check your API key in Settings."
+            return "API 密钥无效，请在设置中检查 (Invalid API key)"
         case .networkError(let message):
-            return "Network error: \(message)"
+            return "网络错误 (Network error): \(message)"
         case .rateLimited:
-            return "Rate limit exceeded. Please wait a moment before trying again."
+            return "请求过于频繁，请稍后再试 (Rate limit exceeded)"
         case .invalidResponse(let statusCode):
             if let code = statusCode {
-                return "Invalid response from AI service (HTTP \(code))"
+                return "AI 服务响应异常 (Invalid response, HTTP \(code))"
             }
-            return "Invalid response from AI service"
+            return "AI 服务响应异常 (Invalid response)"
         case .decodingError(let message):
-            return "Failed to decode AI response: \(message)"
+            return "解析 AI 响应失败 (Failed to decode response): \(message)"
         case .contextTooLong:
-            return "Conversation context is too long. Please start a new chat."
+            return "对话上下文过长，请开启新对话 (Context too long — start a new chat)"
         case .serviceUnavailable:
-            return "AI service is temporarily unavailable"
+            return "AI 服务暂时不可用 (Service temporarily unavailable)"
         case .cancelled:
-            return "Request was cancelled"
+            return "请求已取消 (Request cancelled)"
         case .requestTimeout:
-            return "Request timed out. Please try again."
+            return "请求超时，请重试 (Request timed out)"
         case .maxRetriesExceeded:
-            return "Failed to complete request after multiple retries. Please try again later."
+            return "多次重试后仍然失败，请稍后再试 (Max retries exceeded)"
         }
     }
 }
@@ -128,24 +161,25 @@ protocol LLMServiceProtocol: Actor {
     ///   - message: User's message
     ///   - context: Portfolio context for personalized responses
     ///   - history: Previous conversation history
-    ///   - enableWebSearch: Whether to enable web search for this message
     /// - Returns: AsyncStream of response chunks
     func sendMessage(
         _ message: String,
         context: ConversationContext,
-        history: [ChatMessage],
-        enableWebSearch: Bool
+        history: [ChatMessage]
     ) -> AsyncStream<Result<String, LLMServiceError>>
-    
+
     /// Validates the API key by making a test request
     /// - Returns: Detailed validation result
     func validateAPIKey() async -> APIKeyValidationResult
-    
+
     /// Clears conversation history
     func clearHistory()
-    
+
     /// Whether this service supports web search
     var supportsWebSearch: Bool { get }
+
+    /// Whether this service can autonomously decide when to search
+    var supportsAutonomousWebSearch: Bool { get }
 }
 
 /// Configuration for LLM requests
@@ -162,13 +196,43 @@ struct LLMConfiguration: Sendable {
     static let `default` = LLMConfiguration(
         model: "moonshot-v1-8k",
         temperature: 0.7,
-        maxTokens: 2048,
+        maxTokens: 4096,
         topP: 0.9,
         requestTimeout: 30.0,
         maxRetries: 3,
         retryDelay: 1.0,
         maxContextLength: 8000
     )
+}
+
+// MARK: - Token Estimation
+
+/// Shared token estimator used by both LLM services to budget context.
+///
+/// ASCII-heavy text averages ~4 chars/token; Chinese (CJK Unified Ideographs)
+/// averages ~1.5 chars/token. Mixed text is handled by bucketing each scalar.
+enum TokenEstimator {
+    nonisolated static func estimate(_ text: String) -> Int {
+        var asciiCount = 0
+        var cjkCount = 0
+        var otherCount = 0
+        for scalar in text.unicodeScalars {
+            let v = scalar.value
+            if v < 0x80 {
+                asciiCount += 1
+            } else if (0x4E00...0x9FFF).contains(v) ||
+                      (0x3000...0x30FF).contains(v) ||
+                      (0xAC00...0xD7AF).contains(v) {
+                cjkCount += 1
+            } else {
+                otherCount += 1
+            }
+        }
+        let approx = Double(asciiCount) / 4.0
+            + Double(cjkCount) / 1.5
+            + Double(otherCount) / 2.5
+        return max(1, Int(approx.rounded(.up)))
+    }
 }
 
 // MARK: - System Prompts
@@ -183,16 +247,16 @@ enum SystemPrompts {
         
         return """
         You are a professional investment advisor specializing in portfolio management and rebalancing strategies.
-        
+
         **CURRENT DATE: \(currentDate)**
-        
+
         Your role:
         1. Analyze the user's portfolio and provide actionable advice
         2. Explain rebalancing recommendations clearly
         3. Answer questions about investment strategies
         4. Consider risk tolerance and investment goals
         5. Provide educational context when relevant
-        
+
         Guidelines:
         - Be concise but thorough
         - Use specific numbers and percentages when analyzing
@@ -200,7 +264,17 @@ enum SystemPrompts {
         - Consider tax implications when relevant
         - Always maintain a professional, helpful tone
         - If you don't know something, admit it rather than guessing
-        
+
+        **LANGUAGE:**
+        - Respond in the language of the user's most recent message. If the user writes in Chinese, respond in Chinese; if English, respond in English. Keep numbers, tickers, and proper nouns untranslated.
+
+        **PORTFOLIO CONTEXT FORMAT (below, if present):**
+        - Data is split into sections delimited by lines of `═══` with an ALL-CAPS section title.
+        - Percentages shown as `12.3%` are already multiplied by 100 (human-readable). Underlying weights in `TARGET ALLOCATION` are derived from decimals (0.05 means 5%).
+        - Currency amounts are prefixed with a currency symbol or ISO code. Values shown as `1.23K` / `4.56M` are thousands / millions.
+        - A `Drift` value is `actual − target`; negative means the position is under-weight vs. target.
+        - If a `SYSTEM WARNINGS` section is present, some data may be stale or missing — caveat your answer accordingly and do not invent values to fill the gap.
+
         **WEB SEARCH RESULTS HANDLING:**
         When web search results are provided in the conversation context:
         - You MUST use the information from web search results to answer questions
@@ -215,7 +289,16 @@ enum SystemPrompts {
     /// Builds context-specific part of the prompt
     nonisolated static func buildContextString(context: ConversationContext) -> String {
         var contextString = ""
-        
+
+        if let warnings = context.contextWarnings, !warnings.isEmpty {
+            contextString += "\n\n═══════════════════════════════════════"
+            contextString += "\nSYSTEM WARNINGS"
+            contextString += "\n═══════════════════════════════════════"
+            for warning in warnings {
+                contextString += "\n• \(warning)"
+            }
+        }
+
         if let name = context.portfolioName {
             contextString += "\n\nPortfolio: \(name)"
         }
@@ -315,8 +398,8 @@ enum SystemPrompts {
                 
                 let drift = actualPercent - targetPercent
                 let driftStr = drift >= 0 ? "+\(String(format: "%.1f", drift * 100))%" : "\(String(format: "%.1f", drift * 100))%"
-                let status = abs(drift) > 0.05 ? " ⚠️" : ""
-                
+                let status = abs(drift) > 0.01 ? " [DRIFT]" : ""
+
                 contextString += "\n• \(symbol): Target \(String(format: "%.1f", targetPercent * 100))%, Actual \(String(format: "%.1f", actualPercent * 100))%, Drift \(driftStr)\(status)"
             }
         }
