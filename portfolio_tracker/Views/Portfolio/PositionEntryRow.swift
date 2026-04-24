@@ -64,6 +64,7 @@ struct PositionEntryRow: View {
                             .foregroundStyle(.red)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("删除此行")
                 }
             }
         }
@@ -91,6 +92,7 @@ struct TargetAllocationRow: View {
                         .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("删除此分配")
             }
         }
     }
