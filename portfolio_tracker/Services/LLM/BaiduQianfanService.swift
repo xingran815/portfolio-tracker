@@ -31,6 +31,9 @@ actor BaiduQianfanService: LLMServiceProtocol {
     
     /// Whether this service supports web search (via SerpAPI)
     nonisolated let supportsWebSearch: Bool = true
+
+    /// Whether this service can autonomously decide when to search
+    nonisolated let supportsAutonomousWebSearch: Bool = true
     
     /// Available models
     enum Model: String, Sendable, CaseIterable {
@@ -64,7 +67,11 @@ actor BaiduQianfanService: LLMServiceProtocol {
     }
     
     private let model: Model
-    
+
+    /// Per-session SerpAPI result cache keyed by normalized query.
+    /// Prevents repeated calls for the same topic within one conversation.
+    private var searchCache: [String: SerpSearchResult] = [:]
+
     // MARK: - Initialization
     
     init(
@@ -102,12 +109,11 @@ actor BaiduQianfanService: LLMServiceProtocol {
     }
     
     // MARK: - LLMServiceProtocol
-    
+
     func sendMessage(
         _ message: String,
         context: ConversationContext,
-        history: [ChatMessage],
-        enableWebSearch: Bool = false
+        history: [ChatMessage]
     ) -> AsyncStream<Result<String, LLMServiceError>> {
         AsyncStream { continuation in
             let task = Task {
@@ -116,30 +122,43 @@ actor BaiduQianfanService: LLMServiceProtocol {
                     guard let apiKey = try? await apiKeyManager.getKey(for: .baiduqianfan) else {
                         throw LLMServiceError.apiKeyMissing
                     }
-                    
-                    // Perform web search if enabled
+
+                    // Check if SerpAPI is configured for web search
+                    let serpAPIConfigured = await webSearchService.isConfigured()
+
+                    // Autonomously decide if web search is needed
                     var webSearchContext: String? = nil
-                    if enableWebSearch {
-                        do {
-                            let searchQuery = extractSearchQuery(from: message)
-                            let searchResult = try await webSearchService.search(query: searchQuery)
-                            webSearchContext = searchResult.toSystemPromptContext()
-                            logger.info("Web search completed with \(searchResult.results.count) results")
-                        } catch {
-                            logger.warning("Web search failed: \(error.localizedDescription)")
+                    var searchFailureNote: String? = nil
+                    if serpAPIConfigured && needsWebSearch(for: message) {
+                        let searchQuery = extractSearchQuery(from: message)
+                        let cacheKey = normalizeQueryForCache(searchQuery)
+                        if let cached = searchCache[cacheKey] {
+                            webSearchContext = cached.toSystemPromptContext()
+                            logger.info("Web search cache hit for query '\(searchQuery)'")
+                        } else {
+                            do {
+                                let searchResult = try await webSearchService.search(query: searchQuery)
+                                searchCache[cacheKey] = searchResult
+                                webSearchContext = searchResult.toSystemPromptContext()
+                                logger.info("Autonomous web search triggered with \(searchResult.results.count) results")
+                            } catch {
+                                logger.warning("Web search failed: \(error.localizedDescription)")
+                                searchFailureNote = "网络搜索失败，未能获取最新数据 (Web search failed — no real-time data available)"
+                            }
                         }
                     }
-                    
+
                     // Build request
                     let request = try buildRequest(
                         message: message,
                         context: context,
                         history: history,
                         apiKey: apiKey,
-                        webSearchContext: webSearchContext
+                        webSearchContext: webSearchContext,
+                        searchFailureNote: searchFailureNote
                     )
-                    
-                    logger.info("Sending message to Baidu Qianfan API (model: \(self.model.rawValue), webSearch: \(enableWebSearch))")
+
+                    logger.info("Sending message to Baidu Qianfan API (model: \(self.model.rawValue), webSearch: \(webSearchContext != nil))")
                     
                     // Perform request with retry logic
                     let (bytes, response) = try await performRequestWithRetry(request: request)
@@ -187,7 +206,7 @@ actor BaiduQianfanService: LLMServiceProtocol {
         guard (try? await apiKeyManager.getKey(for: .baiduqianfan)) != nil else {
             return .notConfigured
         }
-        
+
         // Make a simple test request
         let stream = sendMessage(
             "test",
@@ -205,8 +224,7 @@ actor BaiduQianfanService: LLMServiceProtocol {
                 maxDrawdown: nil,
                 exchangeRates: nil
             ),
-            history: [],
-            enableWebSearch: false
+            history: []
         )
         
         var hasValidResponse = false
@@ -226,7 +244,7 @@ actor BaiduQianfanService: LLMServiceProtocol {
     }
     
     func clearHistory() {
-        // No-op for stateless service
+        searchCache.removeAll()
     }
     
     // MARK: - Request Building
@@ -236,7 +254,8 @@ actor BaiduQianfanService: LLMServiceProtocol {
         context: ConversationContext,
         history: [ChatMessage],
         apiKey: String,
-        webSearchContext: String? = nil
+        webSearchContext: String? = nil,
+        searchFailureNote: String? = nil
     ) throws -> URLRequest {
         guard let url = URL(string: "\(baseURL)/chat/completions") else {
             throw LLMServiceError.networkError("Invalid API URL: \(baseURL)/chat/completions")
@@ -245,10 +264,16 @@ actor BaiduQianfanService: LLMServiceProtocol {
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
+
         let body: [String: Any] = [
             "model": model.rawValue,
-            "messages": buildMessages(message: message, context: context, history: history, webSearchContext: webSearchContext),
+            "messages": buildMessages(
+                message: message,
+                context: context,
+                history: history,
+                webSearchContext: webSearchContext,
+                searchFailureNote: searchFailureNote
+            ),
             "temperature": configuration.temperature,
             "max_tokens": configuration.maxTokens,
             "stream": true
@@ -265,18 +290,25 @@ actor BaiduQianfanService: LLMServiceProtocol {
         message: String,
         context: ConversationContext,
         history: [ChatMessage],
-        webSearchContext: String? = nil
+        webSearchContext: String? = nil,
+        searchFailureNote: String? = nil
     ) -> [[String: Any]] {
         var messages: [[String: Any]] = []
-        
+
         // System message
         var systemContent = SystemPrompts.basePrompt + SystemPrompts.buildContextString(context: context)
-        
+
         // Add web search context if available
         if let webContext = webSearchContext {
             systemContent += webContext
         }
-        
+
+        // Surface search failure so the LLM can caveat instead of silently
+        // falling back to possibly-stale training data.
+        if let note = searchFailureNote {
+            systemContent += "\n\n[系统提示 / SYSTEM] \(note)"
+        }
+
         messages.append(["role": "system", "content": systemContent])
         
         // Calculate available tokens for history
@@ -310,12 +342,19 @@ actor BaiduQianfanService: LLMServiceProtocol {
         return messages
     }
     
-    /// Estimates token count for text
-    /// Uses approximate ratio: 1 token ≈ 4 characters for mixed English/Chinese
+    /// Estimates token count for text. Delegates to the shared CJK-aware estimator.
     private func estimateTokenCount(_ text: String) -> Int {
-        // Rough estimation: 4 characters per token on average
-        // This works reasonably well for both English and Chinese
-        return max(1, text.count / 4)
+        TokenEstimator.estimate(text)
+    }
+
+    /// Normalizes a query for cache lookup: lowercased, trimmed, whitespace-collapsed.
+    private func normalizeQueryForCache(_ query: String) -> String {
+        query
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
     
     /// Extracts optimal search query from user message
@@ -359,7 +398,73 @@ actor BaiduQianfanService: LLMServiceProtocol {
         logger.debug("Extracted search query: '\(bestSentence)' (score: \(bestScore))")
         return bestSentence
     }
-    
+
+    /// Determines if web search is needed based on message content.
+    ///
+    /// A search is triggered only when the message contains BOTH:
+    ///   1. a topic keyword (stock, fund, market, rates, earnings…), and
+    ///   2. a time-sensitivity signal (today, latest, current year, etc.), or
+    ///      an explicitly time-sensitive standalone keyword (news, announcement).
+    ///
+    /// This prevents triggering on generic portfolio discussion like
+    /// "讨论一下我的股票组合" — which mentions stocks but does not ask for
+    /// real-time data.
+    func needsWebSearch(for message: String) -> Bool {
+        let lowercased = message.lowercased()
+
+        let topicKeywords = [
+            // Chinese topics
+            "股价", "股票", "基金", "板块", "行业", "行情", "走势", "涨跌",
+            "财报", "盈利", "营收", "业绩", "a股", "港股", "美股", "基金净值",
+            "利率", "美联储", "央行", "通胀", "gdp",
+            // English topics
+            "price", "stock", "fund", "etf", "sector", "industry", "market",
+            "trend", "earnings", "revenue", "quarterly", "fed", "interest rate",
+            "central bank", "inflation", "gdp"
+        ]
+
+        let timeSignals = [
+            // Chinese time signals
+            "最新", "当前", "今天", "今日", "最近", "现在", "目前", "本周", "本月",
+            "今年", "刚刚", "昨天",
+            // English time signals
+            "latest", "current", "today", "now", "recent", "this week",
+            "this month", "this year", "right now",
+            // Year tokens — explicit recency
+            "2024", "2025", "2026"
+        ]
+
+        // Always-time-sensitive standalone keywords. These imply either
+        // "as of now", a discrete recent event, or an explicit request
+        // from the user to go look something up.
+        let standaloneTimeSensitive = [
+            // Chinese — event / news
+            "新闻", "公告", "加息", "降息", "降准",
+            // Chinese — explicit search imperatives
+            "查一查", "查一下", "查查", "搜一搜", "搜一下", "搜索",
+            // English — event / news
+            "news", "announcement", "announce", "breaking",
+            // English — explicit search imperatives
+            "search", "look up", "google", "find out"
+        ]
+
+        for keyword in standaloneTimeSensitive where lowercased.contains(keyword) {
+            logger.debug("Web search needed: standalone time-sensitive keyword '\(keyword)'")
+            return true
+        }
+
+        let hasTopic = topicKeywords.contains { lowercased.contains($0) }
+        guard hasTopic else { return false }
+
+        let hasTimeSignal = timeSignals.contains { lowercased.contains($0) }
+        if hasTimeSignal {
+            logger.debug("Web search needed: topic + time signal detected")
+            return true
+        }
+
+        return false
+    }
+
     // MARK: - SSE Parsing
     
     private func parseSSELine(_ line: String) -> String? {

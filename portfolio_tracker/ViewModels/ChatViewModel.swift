@@ -29,10 +29,7 @@ final class ChatViewModel {
     
     /// Whether to include portfolio context with messages
     var includePortfolioContext = true
-    
-    /// Whether web search is enabled for current message (per-message toggle)
-    var isWebSearchEnabled = false
-    
+
     /// Current portfolio for context (CoreData object)
     private var portfolio: Portfolio?
     
@@ -155,20 +152,18 @@ final class ChatViewModel {
     /// Sends user message and streams AI response
     func sendMessage() {
         guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        
+
         let userMessage = ChatMessage(role: .user, content: inputText)
         messages.append(userMessage)
-        
+
         let messageToSend = inputText
-        let useWebSearch = isWebSearchEnabled
         inputText = ""
-        isWebSearchEnabled = false  // Reset after each message (per-message toggle)
         isLoading = true
         errorMessage = nil
         currentAssistantMessageId = nil
-        
+
         currentTask = Task {
-            await streamResponse(to: messageToSend, enableWebSearch: useWebSearch)
+            await streamResponse(to: messageToSend)
         }
     }
     
@@ -284,8 +279,8 @@ final class ChatViewModel {
     }
     
     // MARK: - Private Methods
-    
-    private func streamResponse(to message: String, enableWebSearch: Bool = false) async {
+
+    private func streamResponse(to message: String) async {
         // Build context from portfolio
         let context = includePortfolioContext ? await buildContext() : ConversationContext(
             portfolioName: nil,
@@ -301,19 +296,18 @@ final class ChatViewModel {
             maxDrawdown: nil,
             exchangeRates: nil
         )
-        
+
         // Create assistant message placeholder with unique ID
         let assistantMessage = ChatMessage(role: .assistant, content: "")
         let assistantId = assistantMessage.id
         currentAssistantMessageId = assistantId
         messages.append(assistantMessage)
-        
+
         // Stream response
         let stream = await llmService.sendMessage(
             message,
             context: context,
-            history: Array(messages.dropLast()), // Exclude current assistant message
-            enableWebSearch: enableWebSearch
+            history: Array(messages.dropLast()) // Exclude current assistant message
         )
         
         var fullResponse = ""
@@ -392,7 +386,7 @@ final class ChatViewModel {
         
         let welcomeMessage = ChatMessage(
             role: .assistant,
-            content: "Hello! I'm your AI portfolio assistant. I can help you analyze your portfolio, suggest rebalancing strategies, and answer investment questions.\n\nHow can I help you today?"
+            content: "你好！我是你的 AI 投资助手，可以帮你分析持仓、给出再平衡建议，以及回答投资相关问题。\n\n请告诉我你想讨论什么？\n\n(Hello! I'm your AI portfolio assistant — ask me anything about your portfolio.)"
         )
         messages.append(welcomeMessage)
     }
@@ -417,15 +411,18 @@ final class ChatViewModel {
         
         let baseCurrency = portfolio.currency
         var exchangeRates: [String: Double]?
-        
+        var warnings: [String] = []
+
         do {
             exchangeRates = try await ExchangeRateProvider.shared.fetchRates(base: baseCurrency.code)
         } catch {
             logger.warning("Failed to fetch exchange rates: \(error)")
+            warnings.append("汇率获取失败，多币种估值可能不准 (Exchange-rate fetch failed — multi-currency totals may be inaccurate)")
         }
-        
+
         guard let positionSet = portfolio.positions as? Set<Position> else {
             logger.warning("Failed to cast positions to Set<Position> for portfolio: \(portfolio.name ?? "Unknown")")
+            warnings.append("持仓数据读取失败，列表为空 (Positions could not be loaded — treating portfolio as empty)")
             return ConversationContext(
                 portfolioName: portfolio.name,
                 positions: [],
@@ -438,7 +435,8 @@ final class ChatViewModel {
                 portfolioCurrency: baseCurrency.rawValue,
                 expectedReturn: portfolio.expectedReturn > 0 ? portfolio.expectedReturn : nil,
                 maxDrawdown: portfolio.maxDrawdown > 0 ? portfolio.maxDrawdown : nil,
-                exchangeRates: exchangeRates
+                exchangeRates: exchangeRates,
+                contextWarnings: warnings.isEmpty ? nil : warnings
             )
         }
         
@@ -485,7 +483,8 @@ final class ChatViewModel {
             portfolioCurrency: baseCurrency.rawValue,
             expectedReturn: portfolio.expectedReturn > 0 ? portfolio.expectedReturn : nil,
             maxDrawdown: portfolio.maxDrawdown > 0 ? portfolio.maxDrawdown : nil,
-            exchangeRates: exchangeRates
+            exchangeRates: exchangeRates,
+            contextWarnings: warnings.isEmpty ? nil : warnings
         )
     }
 }

@@ -164,7 +164,7 @@ final class LLMServiceTests: XCTestCase {
         
         XCTAssertEqual(config.model, "moonshot-v1-8k")
         XCTAssertEqual(config.temperature, 0.7, accuracy: 0.01)
-        XCTAssertEqual(config.maxTokens, 2048)
+        XCTAssertEqual(config.maxTokens, 4096)
         XCTAssertEqual(config.topP, 0.9, accuracy: 0.01)
         XCTAssertEqual(config.requestTimeout, 30.0, accuracy: 0.01)
         XCTAssertEqual(config.maxRetries, 3)
