@@ -15,12 +15,14 @@ actor MockLLMService: LLMServiceProtocol {
     
     /// Whether this service supports web search
     nonisolated let supportsWebSearch: Bool = false
-    
+
+    /// Whether this service can autonomously decide when to search
+    nonisolated let supportsAutonomousWebSearch: Bool = false
+
     func sendMessage(
         _ message: String,
         context: ConversationContext,
-        history: [ChatMessage],
-        enableWebSearch: Bool = false
+        history: [ChatMessage]
     ) -> AsyncStream<Result<String, LLMServiceError>> {
         AsyncStream { continuation in
             Task {
