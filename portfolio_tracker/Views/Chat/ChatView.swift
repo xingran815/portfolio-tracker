@@ -114,16 +114,19 @@ struct ChatView: View {
             }
             .toggleStyle(.button)
             .help(viewModel.includePortfolioContext ? "已启用组合上下文" : "已禁用组合上下文")
-            
+            .accessibilityLabel(viewModel.includePortfolioContext ? "已启用组合上下文" : "已禁用组合上下文")
+
             Button(action: { showingContextInfo = true }) {
                 Image(systemName: "info.circle")
             }
             .help("查看上下文信息")
-            
+            .accessibilityLabel("查看上下文信息")
+
             Button(action: { showingClearConfirmation = true }) {
                 Image(systemName: "trash")
             }
             .help("清除对话")
+            .accessibilityLabel("清除对话")
         }
         .padding()
         .background(Color(nsColor: .controlBackgroundColor))
@@ -186,12 +189,14 @@ struct ChatView: View {
                             .foregroundStyle(.red)
                     }
                     .help("停止生成")
+                    .accessibilityLabel("停止生成")
                 } else {
                     Button(action: { viewModel.sendMessage() }) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.title2)
                             .foregroundStyle(viewModel.inputText.isEmpty ? .secondary : Color.accentColor)
                     }
+                    .accessibilityLabel("发送消息")
                     .disabled(viewModel.inputText.isEmpty)
                     .keyboardShortcut(.return, modifiers: [.command])
                 }

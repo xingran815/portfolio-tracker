@@ -511,6 +511,7 @@ struct OrderRow: View {
             // Action indicator
             Image(systemName: order.action == .buy ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
                 .foregroundStyle(order.action == .buy ? .green : .red)
+                .accessibilityHidden(true)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(order.action.displayName) \(order.symbol)")
@@ -568,6 +569,7 @@ struct TargetAllocationEditorView: View {
                                     .foregroundStyle(.red)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("删除 \(symbol) 目标配置")
                         }
                     }
                     

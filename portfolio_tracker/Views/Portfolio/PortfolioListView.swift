@@ -265,29 +265,6 @@ struct PortfolioRowView: View {
     }
 }
 
-struct RiskBadge: View {
-    let profile: RiskProfile
-    
-    var color: Color {
-        switch profile {
-        case .conservative: return .green
-        case .moderate: return .blue
-        case .aggressive: return .orange
-        }
-    }
-    
-    var body: some View {
-        Text(profile.displayName)
-            .font(.caption2)
-            .fontWeight(.medium)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.2))
-            .foregroundStyle(color)
-            .clipShape(Capsule())
-    }
-}
-
 #Preview {
     NavigationStack {
         PortfolioListView()
