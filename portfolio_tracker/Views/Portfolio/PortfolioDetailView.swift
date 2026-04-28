@@ -423,43 +423,6 @@ struct PortfolioDetailView: View {
     }
 }
 
-// MARK: - Summary Card
-
-struct SummaryCard: View {
-    let title: String
-    let value: String
-    var subtitle: String?
-    let icon: String
-    let color: Color
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .foregroundStyle(color)
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            
-            Text(value)
-                .font(.title2)
-                .fontWeight(.bold)
-                .lineLimit(1)
-            
-            if let subtitle = subtitle {
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(color)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(color.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
-
 // MARK: - Preview
 
 #Preview {
